@@ -1,0 +1,5 @@
+- name: main | install andusystems-slimerio
+  import_tasks: install.yml
+  tags:
+    - andusystems-slimerio
+    - install

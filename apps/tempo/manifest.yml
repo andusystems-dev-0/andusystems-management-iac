@@ -1,0 +1,38 @@
+# apps/tempo/manifest.yml
+# MinIO credentials for Tempo — override via Ansible Vault
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tempo-minio-credentials
+  namespace: tempo
+type: Opaque
+stringData:
+  rootUser: "{{ minio_root_user }}"
+  rootPassword: "{{ minio_root_password }}"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: management-tempo
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: 1.14.0
+      helm:
+        valueFiles:
+          - $values/apps/tempo/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-management.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tempo
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,10 @@
+- name: main | install ArgoCD
+  import_tasks: install.yml
+  tags:
+    - install
+
+- name: main | cleanup ArgoCD
+  import_tasks: cleanup.yml
+  tags:
+    - cleanup
+    - install

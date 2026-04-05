@@ -1,0 +1,68 @@
+---
+- name: Login to ArgoCD
+  shell: |
+    argocd login {{ argocd_server_ip }} \
+      --username admin \
+      --password {{ argocd_admin_password | quote }} \
+      --insecure \
+      --plaintext
+  register: login_result
+  changed_when: "'logged in successfully' in login_result.stdout"
+  until: login_result.rc == 0
+  retries: 5
+  delay: 10
+  environment:
+    ARGOCD_OPTS: "--grpc-web"
+  no_log: true
+
+- name: Create keycloak namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: keycloak
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Create Keycloak admin secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: keycloak-admin-secret
+        namespace: keycloak
+      type: Opaque
+      stringData:
+        username: "{{ keycloak_admin_user }}"
+        password: "{{ keycloak_admin_password }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Read realm JSON and substitute client secret
+  set_fact:
+    realm_json: "{{ lookup('file', repo_root + '/apps/keycloak/realm-grafana.json') | replace('GRAFANA_CLIENT_SECRET_PLACEHOLDER', grafana_oidc_client_secret) }}"
+
+- name: Create Keycloak realm import ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: keycloak-realm-import
+        namespace: keycloak
+      data:
+        grafana-realm.json: "{{ realm_json }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: install | Install Keycloak Manifest
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', repo_root + '/apps/keycloak/manifest.yml') | from_yaml_all | list }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"

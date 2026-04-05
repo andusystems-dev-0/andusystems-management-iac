@@ -1,0 +1,17 @@
+
+- import_playbook: ./roles/vms.yml
+- import_playbook: ./roles/kubernetes.yml
+- import_playbook: ./roles/argocd.yml
+- import_playbook: ./roles/longhorn.yml
+# Forgejo is the `$values` source for every ArgoCD app below — must be up first.
+# It only needs Longhorn (storage class) and its ingress is disabled during install.
+- import_playbook: ./roles/forgejo.yml
+- import_playbook: ./roles/traefik.yml
+- import_playbook: ./roles/pangolin-newt.yml
+- import_playbook: ./roles/cert-manager.yml
+- import_playbook: ./roles/keycloak.yml
+- import_playbook: ./roles/vault.yml
+- import_playbook: ./roles/andusystems-networking.yml
+- import_playbook: ./roles/andusystems-storage.yml
+- import_playbook: ./roles/andusystems-monitoring.yml
+- import_playbook: ./roles/andusystems-fleetdock.yml

@@ -1,0 +1,12 @@
+- name: Install Vault
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: vault
+      tags:
+        - vault
+        - management-apps
+        - apps
+        - install

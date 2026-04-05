@@ -1,0 +1,4 @@
+- name: main | install FleetDock Apps
+  import_tasks: install.yml
+  tags: 
+    - install

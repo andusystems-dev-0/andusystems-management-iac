@@ -1,0 +1,281 @@
+---
+#
+# Traefik application
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slimerio-traefik
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.traefik.io/traefik
+      chart: traefik
+      targetRevision: 32.1.1
+      helm:
+        valueFiles:
+          - $values/apps/traefik/values.yml
+        values: |
+          service:
+            type: LoadBalancer
+            additionalServices: {}
+            annotations:
+              metallb.io/address-pool: default
+              metallb.io/loadBalancerIPs: "{{ slimerio_traefik_server_ip }}"
+    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-slimerio
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Cert-Manager
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slimerio-cert-manager
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      targetRevision: v1.14.4
+      helm:
+        valueFiles:
+          - $values/apps/cert-manager/values.yml
+    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-slimerio
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+---
+#
+# Newt Connector
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slimerio-newt
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.fossorial.io
+      chart: newt
+      targetRevision: 1.2.0
+      helm:
+        valueFiles:
+          - $values/apps/pangolin-newt/values.yml
+    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-slimerio
+    namespace: newt
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Longhorn Storage
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slimerio-longhorn
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      targetRevision: 1.7.3
+      helm:
+        valueFiles:
+          - $values/apps/longhorn/values.yml
+    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-slimerio
+    namespace: longhorn-system
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /spec/preserveUnknownFields
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+---
+#
+# kube-prometheus-stack
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slimerio-kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 69.3.2
+      helm:
+        valueFiles:
+          - $values/apps/kube-prometheus-stack/values.yml
+    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-slimerio
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+#
+# Loki
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slimerio-loki
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 6.25.0
+      helm:
+        valueFiles:
+          - $values/apps/loki/values.yml
+    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-slimerio
+    namespace: loki
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Tempo
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slimerio-tempo
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: 1.14.0
+      helm:
+        valueFiles:
+          - $values/apps/tempo/values.yml
+    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-slimerio
+    namespace: tempo
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Alloy
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slimerio-alloy
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: k8s-monitoring
+      targetRevision: 2.0.6
+      helm:
+        valueFiles:
+          - $values/apps/alloy/values.yml
+    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-slimerio
+    namespace: alloy
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Slimerio Game App (plain manifests from Git)
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slimerio-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    targetRevision: HEAD
+    path: apps/slimerio
+  destination:
+    name: andusystems-slimerio
+    namespace: slimerio
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

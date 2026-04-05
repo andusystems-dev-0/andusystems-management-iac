@@ -1,0 +1,11 @@
+- name: Install storage Apps
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: andusystems-storage
+      tags: 
+        - storage-apps
+        - apps
+        - install

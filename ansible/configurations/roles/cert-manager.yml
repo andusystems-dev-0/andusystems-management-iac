@@ -1,0 +1,12 @@
+- name: Install cert-manager
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: cert-manager
+      tags: 
+        - cert-manager
+        - management-apps
+        - apps
+        - install

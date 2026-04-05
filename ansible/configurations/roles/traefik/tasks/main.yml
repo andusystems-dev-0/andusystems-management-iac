@@ -1,0 +1,4 @@
+- name: main | install traefik
+  import_tasks: install.yml
+  tags: 
+    - install

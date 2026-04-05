@@ -1,0 +1,32 @@
+# gha-runner-scale-set Helm values
+# Chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+
+# GitHub org-level runner — serves all repos under dts-dev-0
+githubConfigUrl: "https://github.com/{{ github_runner_org }}"
+
+githubConfigSecret: github-runner-pat
+
+# Runner label used in workflows (runs-on: self-hosted)
+runnerScaleSetName: "self-hosted"
+
+# Scale from 0 to 3 runners on demand
+minRunners: 0
+maxRunners: 3
+
+# Docker-in-Docker mode for building container images
+containerMode:
+  type: dind
+
+template:
+  spec:
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: "2"
+            memory: 4Gi

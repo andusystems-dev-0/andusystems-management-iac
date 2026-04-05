@@ -1,0 +1,29 @@
+#
+# Alloy — unified observability collector (metrics, logs, traces)
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: management-alloy
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: k8s-monitoring
+      targetRevision: 2.0.6
+      helm:
+        valueFiles:
+          - $values/apps/alloy/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-management.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: in-cluster
+    namespace: alloy
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

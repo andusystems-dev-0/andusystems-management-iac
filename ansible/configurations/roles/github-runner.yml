@@ -1,0 +1,11 @@
+- name: Install GitHub Runner
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: github-runner
+      tags:
+        - github-runner
+        - apps
+        - install

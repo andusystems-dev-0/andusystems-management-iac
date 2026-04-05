@@ -1,0 +1,4 @@
+- name: main | install keycloak
+  import_tasks: install.yml
+  tags:
+    - install

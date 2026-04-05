@@ -1,0 +1,43 @@
+gitea:
+  admin:
+    existingSecret: forgejo-admin-secret
+    username: forgejo_admin
+  config:
+    server:
+      DOMAIN: forgejo.andusystems.com
+      ROOT_URL: https://forgejo.andusystems.com/
+    database:
+      DB_TYPE: sqlite3
+    session:
+      PROVIDER: memory
+    cache:
+      ADAPTER: memory
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: true
+
+ingress:
+  enabled: false
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: longhorn
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+postgresql:
+  enabled: false
+
+postgresql-ha:
+  enabled: false
+
+redis-cluster:
+  enabled: false

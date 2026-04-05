@@ -1,0 +1,11 @@
+- name: Install Slimerio Cluster Apps
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: andusystems-slimerio
+      tags:
+        - andusystems-slimerio
+        - apps
+        - install

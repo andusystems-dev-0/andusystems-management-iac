@@ -1,0 +1,99 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: management-vault
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.releases.hashicorp.com
+      chart: vault
+      targetRevision: 0.29.1
+      helm:
+        valueFiles:
+          - $values/apps/vault/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-management.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: in-cluster
+    namespace: vault
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vault-ingressroute
+  namespace: vault
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: "Host(`{{ vault_url }}`) && PathPrefix(`/`)"
+      kind: Rule
+      middlewares:
+        - name: vault-headers
+          namespace: vault
+      services:
+        - name: management-vault
+          port: 8200
+          namespace: vault
+  tls:
+    secretName: vault-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vault-ingressroute-http
+  namespace: vault
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: "Host(`{{ vault_url }}`) && PathPrefix(`/`)"
+      kind: Rule
+      middlewares:
+        - name: redirect-to-https
+          namespace: vault
+      services:
+        - name: management-vault
+          port: 8200
+          namespace: vault
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: vault
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: vault-headers
+  namespace: vault
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: "https"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-tls
+  namespace: vault
+spec:
+  secretName: vault-tls
+  issuerRef:
+    name: letsencrypt
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ vault_url }}"

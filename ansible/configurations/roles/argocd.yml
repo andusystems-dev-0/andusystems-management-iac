@@ -1,0 +1,11 @@
+- name: Install ArgoCD on the Management cluster
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: argocd
+      tags: 
+        - argocd
+        - cleanup
+        - install

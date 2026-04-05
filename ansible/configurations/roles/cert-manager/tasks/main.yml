@@ -1,0 +1,4 @@
+- name: main | install cert-manager
+  import_tasks: install.yml
+  tags: 
+    - install

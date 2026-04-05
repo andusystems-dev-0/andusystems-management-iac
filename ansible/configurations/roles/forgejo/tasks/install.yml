@@ -1,0 +1,282 @@
+---
+-<REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected>s.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: forgejo
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Create Forgejo admin secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: forgejo-admin-secret
+        namespace: forgejo
+      type: Opaque
+      stringData:
+        username: forgejo_admin
+        password: "{{ forgejo_admin_password }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Install Forgejo Helm chart
+  command: >
+    helm upgrade --install forgejo
+    oci://code.forgejo.org/forgejo-helm/forgejo
+    --namespace forgejo
+    --values {{ repo_root }}/apps/forgejo/values.yml
+    --wait
+    --timeout 10m
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: helm_install
+  changed_when: "'has been upgraded' in helm_install.stdout or 'has been installed' in helm_install.stdout"
+
+- name: Wait for Forgejo pod to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: forgejo
+    label_selectors:
+      - app.kubernetes.io/name=forgejo
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 300
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Get Forgejo ClusterIP
+  command: >
+    kubectl get svc forgejo-http -n forgejo
+    -o jsonpath='{.spec.clusterIP}'
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: forgejo_cluster_ip
+  changed_when: false
+
+- name: Set Forgejo API base URL (via control plane)
+  set_fact:
+    forgejo_internal_url: "http://{{ forgejo_cluster_ip.stdout }}:3000"
+
+- name: Wait for Forgejo API to be responsive (via control plane)
+  command: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    curl -sf {{ forgejo_internal_url }}/api/v1/settings/api
+  register: api_check
+  until: api_check.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Check if andusystems org exists
+  command: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    curl -sf -o /dev/null -w '%{http_code}'
+    -u 'forgejo_admin:{{ forgejo_admin_password }}'
+    {{ forgejo_internal_url }}/api/v1/orgs/andusystems
+  register: org_check
+  changed_when: false
+  failed_when: false
+
+- name: Create andusystems org
+  shell: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf -X POST
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    -H "Content-Type: application/json"
+    -d "{\"username\":\"andusystems\",\"full_name\":\"Andusystems\",\"visibility\":\"public\"}"
+    {{ forgejo_internal_url }}/api/v1/orgs'
+  when: org_check.stdout != '200'
+
+# --- Create service + operator users ---
+- name: Define Forgejo users to create
+  set_fact:
+    forgejo_users:
+      - username: "sentinel"
+        email: "{{ forgejo_sentinel_email }}"
+        password: "{{ forgejo_sentinel_password }}"
+        full_name: "Sentinel"
+      - username: "{{ forgejo_alex_username }}"
+        email: "{{ forgejo_alex_email }}"
+        password: "{{ forgejo_alex_password }}"
+        full_name: "Alex"
+
+- name: Check if Forgejo user exists
+  shell: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf -o /dev/null -w "%{http_code}"
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    {{ forgejo_internal_url }}/api/v1/users/{{ item.username }}'
+  register: user_check
+  loop: "{{ forgejo_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  changed_when: false
+  failed_when: false
+
+- name: Create Forgejo user via admin API
+  shell: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf -X POST
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    -H "Content-Type: application/json"
+    -d "{\"username\":\"{{ item.item.username }}\",\"email\":\"{{ item.item.email }}\",\"password\":\"{{ item.item.password }}\",\"full_name\":\"{{ item.item.full_name }}\",\"must_change_password\":false,\"send_notify\":false}"
+    {{ forgejo_internal_url }}/api/v1/admin/users'
+  loop: "{{ user_check.results }}"
+  loop_control:
+    label: "{{ item.item.username }}"
+  when: item.stdout != '200'
+  no_log: true
+
+- name: Get andusystems org Owners team ID
+  shell: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    {{ forgejo_internal_url }}/api/v1/orgs/andusystems/teams/search?q=Owners'
+  register: owners_team_result
+  changed_when: false
+
+- name: Extract Owners team ID
+  set_fact:
+    owners_team_id: "{{ (owners_team_result.stdout | from_json).data[0].id }}"
+
+- name: Add users to andusystems Owners team
+  shell: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf -X PUT
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    -o /dev/null -w "%{http_code}"
+    {{ forgejo_internal_url }}/api/v1/teams/{{ owners_team_id }}/members/{{ item.username }}'
+  loop: "{{ forgejo_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  register: team_add_result
+  changed_when: team_add_result.stdout == '204'
+  failed_when: team_add_result.stdout not in ['204', '200']
+
+# --- Create all IaC repos under the andusystems org ---
+- name: Define IaC repos to create on Forgejo
+  set_fact:
+    forgejo_iac_repos:
+      - name: "andusystems-management"
+        description: "Management cluster IaC (VLAN 10)"
+      - name: "andusystems-monitoring"
+        description: "Monitoring cluster IaC (VLAN 50)"
+      - name: "andusystems-networking"
+        description: "Networking cluster IaC (VLAN 30)"
+      - name: "andusystems-storage"
+        description: "Storage cluster IaC (VLAN 40)"
+      - name: "andusystems-fleetdock"
+        description: "FleetDock cluster IaC (VLAN 30/60)"
+      - name: "andusystems-slimerio"
+        description: "Slimerio cluster IaC"
+
+- name: Check if Forgejo IaC repo exists
+  shell: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf -o /dev/null -w "%{http_code}"
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    {{ forgejo_internal_url }}/api/v1/repos/andusystems/{{ item.name }}'
+  register: iac_repo_check
+  loop: "{{ forgejo_iac_repos }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+  failed_when: false
+
+- name: Create Forgejo IaC repo
+  shell: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf -X POST
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    -H "Content-Type: application/json"
+    -d "{\"name\":\"{{ item.item.name }}\",\"description\":\"{{ item.item.description }}\",\"private\":false,\"auto_init\":false}"
+    {{ forgejo_internal_url }}/api/v1/orgs/andusystems/repos'
+  loop: "{{ iac_repo_check.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.stdout != '200'
+
+- name: Check if forgejo git remote exists
+  command: git -C {{ repo_root }} remote get-url forgejo
+  register: remote_check
+  failed_when: false
+  changed_when: false
+
+- name: Add forgejo git remote (public URL, no embedded creds)
+  command: >
+    git -C {{ repo_root }} remote add forgejo
+    https://forgejo.andusystems.com/andusystems/andusystems-management.git
+  when: remote_check.rc != 0
+
+- name: Update forgejo git remote URL (public URL, no embedded creds)
+  command: >
+    git -C {{ repo_root }} remote set-url forgejo
+    https://forgejo.andusystems.com/andusystems/andusystems-management.git
+  when: remote_check.rc == 0
+
+- name: Push management repo to Forgejo (via control plane as git proxy)
+  shell: |
+    cd {{ repo_root }}
+    git bundle create /tmp/management-repo.bundle --all
+    scp -o StrictHostKeyChecking=no /tmp/management-repo.bundle {{ ssh_user }}@{{ control_plane_ip }}:/tmp/
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }} bash -c '
+      cd /tmp &&
+      git clone management-repo.bundle management-repo &&
+      cd management-repo &&
+      git remote add forgejo http://forgejo_admin:{{ forgejo_admin_password }}@{{ forgejo_cluster_ip.stdout }}:3000/andusystems/andusystems-management.git &&
+      git push forgejo HEAD:main --force &&
+      cd /tmp && rm -rf management-repo management-repo.bundle
+    '
+    rm -f /tmp/management-repo.bundle
+  register: push_result
+  changed_when: true
+
+- name: Log in to ArgoCD (for repo registration)
+  shell: |
+    argocd login {{ argocd_server_ip }} \
+      --username admin \
+      --password {{ argocd_admin_password | quote }} \
+      --insecure \
+      --plaintext
+  register: argocd_login
+  changed_when: "'logged in successfully' in argocd_login.stdout"
+  environment:
+    ARGOCD_OPTS: "--grpc-web"
+  no_log: true
+
+- name: Register all Forgejo IaC repos in ArgoCD
+  shell: |
+    argocd repo add http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/{{ item.name }}.git \
+      --upsert
+  loop: "{{ forgejo_iac_repos }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: argocd_repo
+  changed_when: '"already exists" not in argocd_repo.stdout'
+  # Empty repos cause argocd CLI's connectivity check (ls-remote HEAD) to fail.
+  # That's expected on first bootstrap — non-management repos have no commits
+  # yet. Treat "remote repository is empty" as success; the user will push
+  # content to each repo from its local clone and re-register later.
+  failed_when:
+    - argocd_repo.rc != 0
+    - "'remote repository is empty' not in argocd_repo.stderr"
+
+- name: Display Forgejo info
+  debug:
+    msg:
+      - "Forgejo is running (ClusterIP: {{ forgejo_cluster_ip.stdout }}:3000)"
+      - "Public URL: https://forgejo.andusystems.com"
+      - "Admin: forgejo_admin"
+      - "IaC repos created: {{ forgejo_iac_repos | map(attribute='name') | list | join(', ') }}"
+      - "Users created: sentinel, {{ forgejo_alex_username }}"
+      - "Management repo pushed to Forgejo"
+      - "Reminder: generate a new sentinel PAT via Forgejo UI after deploy, then update FORGEJO_SENTINEL_TOKEN in sentinel/.env"

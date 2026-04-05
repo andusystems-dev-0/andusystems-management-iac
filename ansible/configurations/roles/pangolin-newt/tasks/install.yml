@@ -1,0 +1,51 @@
+---
+- name: Create newt namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: newt
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Apply newt credentials secret
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', repo_root + '/apps/pangolin-newt/manifest.yml') | from_yaml_all | list }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: install | Install Newt ArgoCD Application
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: management-newt
+        namespace: argocd
+      spec:
+        project: default
+        sources:
+          - repoURL: https://charts.fossorial.io
+            chart: newt
+            targetRevision: 1.2.0
+            helm:
+              valueFiles:
+                - $values/apps/pangolin-newt/values.yml
+          - repoURL: git@github.com:dts-dev-0/andusystems-management.git
+            targetRevision: HEAD
+            ref: values
+        destination:
+          name: in-cluster
+          namespace: newt
+        syncPolicy:
+          automated:
+            prune: false
+            selfHeal: true
+          syncOptions:
+            - CreateNamespace=true
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"

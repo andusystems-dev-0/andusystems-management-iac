@@ -1,0 +1,289 @@
+---
+#
+# Traefik application
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fleetdock-traefik
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.traefik.io/traefik
+      chart: traefik
+      targetRevision: 32.1.1   # latest stable as of early 2026
+      helm:
+        valueFiles:
+          - $values/apps/traefik/values.yml
+        values: |
+          service:
+            type: LoadBalancer
+            additionalServices: {}
+            annotations:
+              metallb.io/address-pool: default
+              metallb.io/loadBalancerIPs: "{{ fleetdock_traefik_server_ip }}"
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-fleetdock.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-fleetdock
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Cert-Manager
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fleetdock-cert-manager
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      targetRevision: v1.14.4
+      helm:
+        valueFiles:
+          - $values/apps/cert-manager/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-fleetdock.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-fleetdock
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true    # ← likely missing
+      - RespectIgnoreDifferences=true
+    managedNamespaceMetadata: {}
+---
+#
+# Newt Connector
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fleetdock-newt
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.fossorial.io
+      chart: newt
+      targetRevision: 1.2.0
+      helm:
+        valueFiles:
+          - $values/apps/pangolin-newt/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-fleetdock.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-fleetdock
+    namespace: newt
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Longhorn Storage
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fleetdock-longhorn
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      targetRevision: 1.7.3
+      helm:
+        valueFiles:
+          - $values/apps/longhorn/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-fleetdock.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-fleetdock
+    namespace: longhorn-system
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /spec/preserveUnknownFields
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+---
+#
+# kube-prometheus-stack (Prometheus, Alertmanager, node-exporter, kube-state-metrics, CRDs)
+# Spoke cluster — no Grafana UI
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fleetdock-kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 69.3.2
+      helm:
+        valueFiles:
+          - $values/apps/kube-prometheus-stack/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-fleetdock.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-fleetdock
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+#
+# Loki — log aggregation with MinIO backend
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fleetdock-loki
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 6.25.0
+      helm:
+        valueFiles:
+          - $values/apps/loki/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-fleetdock.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-fleetdock
+    namespace: loki
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Tempo — distributed tracing with MinIO backend
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fleetdock-tempo
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: 1.14.0
+      helm:
+        valueFiles:
+          - $values/apps/tempo/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-fleetdock.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-fleetdock
+    namespace: tempo
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Alloy — unified observability collector (metrics, logs, traces)
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fleetdock-alloy
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: k8s-monitoring
+      targetRevision: 2.0.6
+      helm:
+        valueFiles:
+          - $values/apps/alloy/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-fleetdock.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-fleetdock
+    namespace: alloy
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# FleetDock - Game Server Management Panel
+#
+#apiVersion: argoproj.io/v1alpha1
+#kind: Application
+#metadata:
+#  name: fleetdock
+#  namespace: argocd
+#spec:
+#  project: default
+#  sources:
+#    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/fleetdock.git
+#      targetRevision: HEAD
+#      path: helm/fleetdock
+#      helm:
+#        valueFiles:
+#          - $values/apps/fleetdock/values.yml
+#    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-fleetdock.git
+#      targetRevision: HEAD
+#      ref: values
+#  destination:
+#    name: andusystems-fleetdock
+#    namespace: fleetdock
+#  syncPolicy:
+#    automated:
+#      prune: true
+#      selfHeal: true
+#    syncOptions:
+#      - CreateNamespace=true

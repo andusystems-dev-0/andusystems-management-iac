@@ -1,0 +1,12 @@
+- name: Install Forgejo
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: forgejo
+      tags:
+        - forgejo
+        - management-apps
+        - apps
+        - install

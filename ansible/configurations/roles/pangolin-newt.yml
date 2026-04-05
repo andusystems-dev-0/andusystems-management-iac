@@ -1,0 +1,12 @@
+- name: Install Newt
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: pangolin-newt
+      tags:
+        - newt
+        - management-apps
+        - apps
+        - install

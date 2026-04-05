@@ -1,0 +1,7 @@
+---
+- name: Install GitHub Runner
+  import_tasks: install.yml
+  tags:
+    - github-runner
+    - apps
+    - install

@@ -1,0 +1,110 @@
+# install.yml already logged in (either with initial or vault password) and set
+# argocd_initial_password_active. Only rotate if the initial password is still
+# active — on re-runs the vault password is already the active one, so we skip.
+
+- name: Rotate ArgoCD admin password from initial to vault value
+  shell: |
+    argocd account update-password \
+      --current-password {{ argocd_initial_password | quote }} \
+      --new-password {{ argocd_admin_password }} \
+      --insecure \
+      --plaintext
+  environment:
+    ARGOCD_OPTS: "--grpc-web"
+  when: argocd_initial_password_active | default(false)
+  no_log: true
+
+# --- Configure github-actions service account for deploy workflows ---
+# Creates an apiKey-capable account and RBAC scoped to sync slimerio-app.
+# Token is stored in a k8s Secret for retrieval; copy into GitHub Secrets.
+
+- name: Patch argocd-cm to register github-actions account
+  kubernetes.core.k8s:
+    state: patched
+    kind: ConfigMap
+    namespace: argocd
+    name: argocd-cm
+    definition:
+      data:
+        accounts.github-actions: apiKey
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Patch argocd-rbac-cm with github-actions sync policy
+  kubernetes.core.k8s:
+    state: patched
+    kind: ConfigMap
+    namespace: argocd
+    name: argocd-rbac-cm
+    definition:
+      data:
+        policy.csv: |
+          p, github-actions, projects, get, default, allow
+          p, github-actions, applications, get, default/slimerio-app, allow
+          p, github-actions, applications, sync, default/slimerio-app, allow
+          p, github-actions, applications, action/*, default/slimerio-app, allow
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Check if github-actions token secret already exists
+  kubernetes.core.k8s_info:
+    kind: Secret
+    namespace: argocd
+    name: github-actions-token
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: gha_token_secret
+
+- name: Generate ArgoCD API token for github-actions
+  shell: |
+    argocd account generate-token --account github-actions
+  register: gha_token_result
+  environment:
+    ARGOCD_OPTS: "--grpc-web"
+  until: gha_token_result.rc == 0
+  retries: 10
+  delay: 3
+  when: gha_token_secret.resources | length == 0
+  no_log: true
+
+- name: Store github-actions token in a k8s Secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: github-actions-token
+        namespace: argocd
+        annotations:
+          andusystems.com/purpose: "argocd api token for github actions workflows"
+      type: Opaque
+      stringData:
+        token: "{{ gha_token_result.stdout }}"
+        server: "{{ argocd_server_ip }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  when: gha_token_secret.resources | length == 0
+  no_log: true
+
+- name: Display GitHub Actions secret retrieval instructions
+  debug:
+    msg:
+      - "============================================================"
+      - "ArgoCD 'github-actions' account configured and token stored."
+      - "To add to Slimerio repo's GitHub Secrets, run:"
+      - ""
+      - "  kubectl --kubeconfig {{ kubeconfig }} -n argocd \\"
+      - "    get secret github-actions-token -o jsonpath='{.data.token}' | base64 -d"
+      - ""
+      - "Copy the output → GitHub repo → Settings → Secrets → Actions:"
+      - "  ARGOCD_AUTH_TOKEN = <that token>"
+      - "  ARGOCD_SERVER     = {{ argocd_server_ip }}"
+      - "============================================================"
+
+# NOTE: The previous "Revert ArgoCD service back to ClusterIP" step was removed
+# because downstream roles (traefik, keycloak, forgejo, vault, etc.) use
+# `argocd login {{ argocd_server_ip }}` which points at the MetalLB LoadBalancer
+# IP set in install.yml. Reverting to ClusterIP here releases that IP and kills
+# every downstream argocd-cli call. Keep the service as LoadBalancer for the
+# whole deploy; Traefik IngressRoute can still be used for browser access.

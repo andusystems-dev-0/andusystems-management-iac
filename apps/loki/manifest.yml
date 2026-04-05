@@ -1,0 +1,38 @@
+# apps/loki/manifest.yml
+# MinIO credentials for Loki — override via Ansible Vault
+apiVersion: v1
+kind: Secret
+metadata:
+  name: loki-minio-credentials
+  namespace: loki
+type: Opaque
+stringData:
+  rootUser: "{{ minio_root_user }}"
+  rootPassword: "{{ minio_root_password }}"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: management-loki
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 6.25.0
+      helm:
+        valueFiles:
+          - $values/apps/loki/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-management.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: loki
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

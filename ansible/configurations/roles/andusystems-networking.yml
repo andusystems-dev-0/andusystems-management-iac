@@ -1,0 +1,11 @@
+- name: Install Networking Apps
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: andusystems-networking
+      tags: 
+        - networking-apps
+        - apps
+        - install

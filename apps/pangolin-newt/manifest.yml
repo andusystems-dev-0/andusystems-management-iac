@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: newt-credentials
+  namespace: newt
+stringData:
+  newt-endpoint: "{{ pangolin_endpoint }}"
+  newt-id: "{{ newt_id }}"
+  newt-secret: "{{ newt_secret }}"
+---
+#
+# Newt Connector
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: management-newt
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.fossorial.io
+      chart: newt
+      targetRevision: 1.2.0
+      helm:
+        valueFiles:
+          - $values/apps/pangolin-newt/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-management.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: in-cluster
+    namespace: newt
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

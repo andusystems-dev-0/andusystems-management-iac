@@ -1,0 +1,12 @@
+- name: Install Keycloak
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: keycloak
+      tags:
+        - keycloak
+        - management-apps
+        - apps
+        - install

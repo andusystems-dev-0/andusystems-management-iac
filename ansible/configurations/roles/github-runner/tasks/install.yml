@@ -1,0 +1,47 @@
+---
+- name: Apply GitHub Runner manifests (namespaces + PAT secret)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', repo_root + '/apps/github-runner/manifest.yml') | from_yaml_all | list }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Install ARC controller
+  command: >
+    helm upgrade --install arc
+    oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+    --namespace arc-systems
+    --values {{ repo_root }}/apps/github-runner/values-controller.yml
+    --wait
+    --timeout 300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: arc_controller_helm
+  changed_when: "'has been upgraded' in arc_controller_helm.stdout or 'has been installed' in arc_controller_helm.stdout"
+
+- name: Wait for ARC controller to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: arc-systems
+    label_selectors:
+      - app.kubernetes.io/name=gha-rs-controller
+  register: arc_controller
+  until: arc_controller.resources | length > 0 and (arc_controller.resources[0].status.readyReplicas | default(0)) > 0
+  retries: 30
+  delay: 10
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Install runner scale set
+  command: >
+    helm upgrade --install arc-runner-set
+    oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+    --namespace arc-runners
+    --values {{ repo_root }}/apps/github-runner/values-runner.yml
+    --set githubConfigUrl=https://github.com/{{ github_runner_org }}
+    --wait
+    --timeout 300s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: arc_runner_helm
+  changed_when: "'has been upgraded' in arc_runner_helm.stdout or 'has been installed' in arc_runner_helm.stdout"

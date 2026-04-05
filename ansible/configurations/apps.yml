@@ -1,0 +1,16 @@
+- import_playbook: ./roles/longhorn.yml
+- import_playbook: ./roles/forgejo.yml
+- import_playbook: ./roles/traefik.yml
+- import_playbook: ./roles/pangolin-newt.yml
+- import_playbook: ./roles/cert-manager.yml
+- import_playbook: ./roles/keycloak.yml
+#- import_playbook: ./roles/vault.yml
+- import_playbook: ./roles/kube-prometheus-stack.yml
+- import_playbook: ./roles/loki.yml
+- import_playbook: ./roles/tempo.yml
+- import_playbook: ./roles/alloy.yml
+- import_playbook: ./roles/andusystems-networking.yml
+- import_playbook: ./roles/andusystems-storage.yml
+- import_playbook: ./roles/andusystems-monitoring.yml
+- import_playbook: ./roles/andusystems-slimerio.yml
+- import_playbook: ./roles/github-runner.yml

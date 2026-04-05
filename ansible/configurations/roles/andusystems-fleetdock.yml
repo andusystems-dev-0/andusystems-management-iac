@@ -1,0 +1,11 @@
+- name: Install FleetDock Apps
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: andusystems-fleetdock
+      tags: 
+        - fleetdock-apps
+        - apps
+        - install

@@ -1,0 +1,13 @@
+# ArgoCD Server configuration
+server:
+  # Run in insecure mode - TLS is terminated at Traefik
+  extraArgs:
+    - --insecure
+
+  service:
+    type: ClusterIP
+    ports:
+      - name: http
+        port: 80
+        targetPort: 8080
+        protocol: TCP

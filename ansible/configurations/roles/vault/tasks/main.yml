@@ -1,0 +1,4 @@
+- name: main | install vault
+  import_tasks: install.yml
+  tags:
+    - install

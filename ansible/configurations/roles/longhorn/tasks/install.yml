@@ -1,0 +1,33 @@
+---
+- name: Add Longhorn Helm repo
+  command: helm repo add longhorn https://charts.longhorn.io
+  register: helm_repo
+  changed_when: "'has been added' in helm_repo.stdout"
+  failed_when: helm_repo.rc != 0 and 'already exists' not in helm_repo.stderr
+
+- name: Update Helm repos
+  command: helm repo update
+  changed_when: false
+
+- name: Create longhorn-system namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: longhorn-system
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Install Longhorn Helm chart
+  command: >
+    helm upgrade --install longhorn longhorn/longhorn
+    --namespace longhorn-system
+    --values {{ repo_root }}/apps/longhorn/values.yml
+    --wait
+    --timeout 10m
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  register: helm_install
+  changed_when: "'has been upgraded' in helm_install.stdout or 'has been installed' in helm_install.stdout"
