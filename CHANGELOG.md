@@ -10,9 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Bumped Alloy resource limits to prevent OOMKilled on management cluster.
 - Enabled additional Ansible playbooks for Andusystems clusters in `apps.yml`.
 - Added policy rule for GitHub Actions in ArgoCD cleanup tasks.
+- Generated project documentation (README, architecture, development guide).
 
 ### Changed
 - Refactored GitHub Runner installation to use `helm` command directly instead of Ansible Helm module.
+- Improved ARC controller and runner scale set installation with updated command syntax and Helm output registration.
+- Updated ARC controller label selector for deployment detection.
 - Integrated Forgejo into deployment playbooks and streamlined ArgoCD configurations.
 - Updated ArgoCD login and repository registration to use public access URLs.
 - Enhanced Forgejo user management and repository creation automation.

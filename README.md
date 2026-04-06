@@ -29,6 +29,7 @@ The management cluster acts as the **hub** — running the primary ArgoCD instan
 │  │  │  Spoke Clusters (via ArgoCD)          │    │  │
 │  │  │  • Monitoring  • Storage              │    │  │
 │  │  │  • Networking  • FleetDock            │    │  │
+│  │  │  • Slimerio                           │    │  │
 │  │  └───────────────────────────────────────┘    │  │
 │  │                                               │  │
 │  │  ┌──────────┐ ┌────────┐ ┌───────────────┐   │  │
@@ -57,17 +58,25 @@ For detailed architecture documentation, see [docs/architecture.md](docs/archite
 | kubectl    | >= 1.31   | Kubernetes CLI                 |
 | Helm       | >= 3.x    | Helm chart management          |
 | ArgoCD CLI | >= 2.12   | ArgoCD management              |
+| Python     | >= 3.10   | Required by Ansible            |
 
 ### Deployment
 
 The full deployment is orchestrated through Ansible playbooks that call Terraform and apply Kubernetes manifests.
 
 ```bash
-# 1. Provision VMs and bootstrap Kubernetes
-ansible-playbook -i ansible/inventory/management/hosts.yml ansible/configurations/deploy.yml
+# 1. Install required Ansible collections
+ansible-galaxy collection install -r ansible/requirements.yml
 
-# 2. Deploy applications (after initial cluster setup)
-ansible-playbook -i ansible/inventory/management/hosts.yml ansible/configurations/apps.yml
+# 2. Provision VMs and bootstrap Kubernetes
+ansible-playbook -i ansible/inventory/management/hosts.yml \
+  ansible/configurations/deploy.yml \
+  --ask-vault-pass
+
+# 3. Deploy applications (after initial cluster setup)
+ansible-playbook -i ansible/inventory/management/hosts.yml \
+  ansible/configurations/apps.yml \
+  --ask-vault-pass
 ```
 
 The `deploy.yml` playbook executes the full stack in order:
@@ -94,19 +103,20 @@ ansible/inventory/management/group_vars/all/vault.example
 
 Key configuration variables:
 
-| Variable Category   | Description                                          |
-|---------------------|------------------------------------------------------|
-| `ssh_*`             | SSH user, key paths for VM access                    |
-| `control_plane_ip`  | Static IP for the control plane VM                   |
-| `worker_ips`        | Static IPs for worker VMs                            |
-| `kubernetes_version`| Kubernetes version (currently 1.31)                  |
-| `pod_network_cidr`  | Pod network CIDR for Flannel CNI                     |
-| `metallb_ip_range`  | IP range for MetalLB load balancer pool              |
-| `argocd_*`          | ArgoCD credentials and URL                           |
-| `cloudflare_api_token` | Cloudflare token for DNS-01 challenges            |
-| `forgejo_*`         | Forgejo admin credentials and URL                    |
-| `keycloak_*`        | Keycloak admin credentials and URL                   |
-| `vault_*`           | HashiCorp Vault URL and credentials                  |
+| Variable Category      | Description                                          |
+|------------------------|------------------------------------------------------|
+| `ssh_*`                | SSH user, key paths for VM access                    |
+| `control_plane_ip`     | Static IP for the control plane VM                   |
+| `worker_ips`           | Static IPs for worker VMs                            |
+| `kubernetes_version`   | Kubernetes version (currently 1.31)                  |
+| `pod_network_cidr`     | Pod network CIDR for Flannel CNI                     |
+| `metallb_ip_range`     | IP range for MetalLB load balancer pool              |
+| `argocd_*`             | ArgoCD credentials and URL                           |
+| `cloudflare_api_token` | Cloudflare token for DNS-01 challenges               |
+| `forgejo_*`            | Forgejo admin credentials and URL                    |
+| `keycloak_*`           | Keycloak admin credentials and URL                   |
+| `vault_*`              | HashiCorp Vault URL and credentials                  |
+| `github_runner_pat`    | GitHub Personal Access Token for self-hosted runners |
 
 ## Repository Structure
 
@@ -160,7 +170,30 @@ The management cluster's ArgoCD instance deploys applications to these downstrea
 | Storage       | Persistent storage services            | MinIO (S3), Longhorn, Prometheus, Loki, Tempo          |
 | Networking    | Network services                       | PiHole (DNS), Longhorn, Prometheus, Loki               |
 | FleetDock     | Game server management                 | FleetDock, Longhorn, Prometheus, Loki                  |
-| Slimerio      | Application cluster                    | Managed via separate repository                        |
+| Slimerio      | Application cluster                    | Slimerio app, Longhorn, Prometheus, Loki               |
+
+Each spoke cluster also receives its own Traefik ingress controller, cert-manager instance, Pangolin-Newt VPN connector, and full observability stack (Prometheus, Loki, Tempo, Alloy).
+
+## Technology Stack
+
+| Component        | Technology                                |
+|------------------|-------------------------------------------|
+| Hypervisor       | Proxmox VE                                |
+| OS               | Ubuntu Noble 24.04 LTS                    |
+| Container Runtime| containerd                                |
+| Kubernetes       | v1.31 (kubeadm)                           |
+| CNI              | Flannel                                   |
+| GitOps           | ArgoCD                                    |
+| Ingress          | Traefik (IngressRoute CRDs)               |
+| Load Balancer    | MetalLB (L2 mode)                         |
+| TLS              | cert-manager + Let's Encrypt (Cloudflare) |
+| Storage          | Longhorn (block), MinIO (object/S3)       |
+| Git              | Forgejo (self-hosted)                     |
+| SSO              | Keycloak (OIDC)                           |
+| Secrets          | HashiCorp Vault                           |
+| Observability    | Prometheus, Loki, Tempo, Alloy, Grafana   |
+| CI/CD Runners    | GitHub Actions Runner Controller (ARC)    |
+| VPN              | Pangolin-Newt                             |
 
 ## Further Documentation
 

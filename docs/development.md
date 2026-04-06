@@ -31,6 +31,7 @@ This installs:
 - SSH key pair for VM access (default user: `ubuntu`)
 - Cloudflare API token (for DNS-01 certificate challenges)
 - Ansible Vault password (for decrypting secrets)
+- GitHub Personal Access Token (for Actions Runner Controller, if deploying CI runners)
 
 ## Local Development Setup
 
@@ -151,6 +152,21 @@ terraform plan
 terraform apply
 ```
 
+### Helper Scripts
+
+Shell scripts in `scripts/` provide shortcuts for common partial deployments:
+
+| Script                 | Purpose                                    |
+|------------------------|--------------------------------------------|
+| `scripts/vms.sh`       | Deploy VMs only                            |
+| `scripts/kubernetes.sh`| Deploy Kubernetes only                     |
+| `scripts/argocd.sh`    | Bootstrap ArgoCD                           |
+| `scripts/apps.sh`      | Deploy all applications                    |
+| `scripts/management-apps.sh` | Deploy management cluster apps only  |
+| `scripts/monitoring-apps.sh` | Deploy monitoring cluster apps only  |
+| `scripts/github-runner.sh`   | Deploy GitHub Actions runners        |
+| `scripts/redeploy.sh`  | Full redeployment from scratch             |
+
 ## Deployment Order
 
 Services must be deployed in a specific order due to dependencies:
@@ -158,7 +174,7 @@ Services must be deployed in a specific order due to dependencies:
 ```
 VMs → Kubernetes → ArgoCD + MetalLB → Longhorn → Forgejo
   → Traefik → Pangolin-Newt → Cert-Manager → Keycloak → Vault
-  → Spoke Cluster Apps (Networking, Storage, Monitoring, FleetDock)
+  → Spoke Cluster Apps (Networking, Storage, Monitoring, FleetDock, Slimerio)
 ```
 
 Critical ordering constraints:
@@ -192,7 +208,7 @@ The master playbook that runs the full deployment. It imports roles in dependenc
 
 ### apps.yml
 
-Application-only deployment that skips VM and Kubernetes provisioning. Useful for updating or adding services to an existing cluster. Includes additional roles:
+Application-only deployment that skips VM and Kubernetes provisioning. Useful for updating or adding services to an existing cluster. Includes additional roles beyond `deploy.yml`:
 
 - `kube-prometheus-stack` — Prometheus, Alertmanager, and exporters
 - `loki` — Log aggregation
@@ -200,6 +216,18 @@ Application-only deployment that skips VM and Kubernetes provisioning. Useful fo
 - `alloy` — Unified observability collector
 - `github-runner` — GitHub Actions Runner Controller
 - `andusystems-slimerio` — Slimerio cluster registration
+
+### argocd.yml
+
+Minimal playbook focused on ArgoCD bootstrap:
+
+1. Terraform apply (Layer 2) to install MetalLB and ArgoCD Helm charts
+2. Apply MetalLB manifest (IPAddressPool + L2Advertisement)
+3. Wait for ArgoCD server pod and service readiness
+4. Patch ArgoCD service to LoadBalancer type for initial access
+5. Login with admin credentials
+6. Register Git repositories (Forgejo, Slimerio)
+7. Register spoke clusters via kubeconfig
 
 ## Environment Variables
 
@@ -212,7 +240,7 @@ Ansible variables are sourced from Ansible Vault. The following categories of va
 | Network               | `control_plane_ip`, `worker_ips`, `metallb_ip_range`|
 | Kubernetes            | `kubernetes_version`, `pod_network_cidr`            |
 | ArgoCD                | `argocd_url`, `argocd_admin_password`               |
-| DNS/TLS               | `cloudflare_api_token`                              |
+| DNS/TLS               | `cloudflare_api_token`, `letsencrypt_email`         |
 | Forgejo               | `forgejo_url`, `forgejo_admin_password`              |
 | Keycloak              | `keycloak_url`, `keycloak_admin_user`               |
 | Vault                 | `vault_url`                                         |
@@ -231,6 +259,39 @@ host_key_checking = False    # Skip SSH host key verification
 log_path = ansible.log       # Log output to file
 become_ask_pass = false      # Do not prompt for sudo password
 ```
+
+## Adding a New Application
+
+To add a new application to the management cluster:
+
+1. **Create the app directory** under `apps/<app-name>/` with:
+   - `manifest.yml` — ArgoCD Application resource referencing the Helm chart
+   - `values.yml` — Helm values override file
+
+2. **Create an Ansible role** under `ansible/configurations/roles/<app-name>/`:
+   - `defaults/main.yml` — Default variables
+   - `tasks/main.yml` — Entry point (typically includes `install.yml`)
+   - `tasks/install.yml` — kubectl apply of the manifest and any additional resources
+
+3. **Create a playbook wrapper** at `ansible/configurations/roles/<app-name>.yml` that targets `localhost` and includes the role.
+
+4. **Add to a deployment playbook** — Import the role in `deploy.yml` or `apps.yml` at the correct position respecting dependency order.
+
+5. **Push values to Forgejo** — If the ArgoCD Application uses `$values` referencing the management repository, ensure the values file is committed and pushed to the Forgejo instance.
+
+## Adding a New Spoke Cluster
+
+To register a new spoke cluster with the management ArgoCD:
+
+1. **Obtain the kubeconfig** for the new cluster and store it as an Ansible Vault variable.
+
+2. **Register the cluster** in the ArgoCD role (`ansible/configurations/roles/argocd/tasks/install.yml`) by adding a cluster registration command.
+
+3. **Create an app manifest directory** under `apps/andusystems-<cluster-name>/` containing the ArgoCD Application manifests for each service to deploy.
+
+4. **Create an Ansible role** under `ansible/configurations/roles/andusystems-<cluster-name>/` with tasks to apply the manifests.
+
+5. **Add to deployment playbooks** — Import the new role in `deploy.yml` and/or `apps.yml`.
 
 ## Troubleshooting
 
@@ -274,4 +335,22 @@ Verify certificate issuance:
 kubectl get certificates -A
 kubectl get clusterissuers
 kubectl describe certificate <cert-name> -n <namespace>
+```
+
+### MetalLB
+
+Verify IP pool and address assignment:
+
+```bash
+kubectl -n metallb get ipaddresspools
+kubectl get svc -A | grep LoadBalancer
+```
+
+### Forgejo
+
+If ArgoCD cannot sync applications, verify Forgejo is running and accessible from within the cluster:
+
+```bash
+kubectl -n forgejo get pods
+kubectl -n forgejo get svc
 ```
