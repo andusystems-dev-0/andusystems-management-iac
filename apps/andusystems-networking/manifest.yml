@@ -65,7 +65,7 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true    # ← likely missing
+      - ServerSideApply=true
       - RespectIgnoreDifferences=true
     managedNamespaceMetadata: {}
 ---
