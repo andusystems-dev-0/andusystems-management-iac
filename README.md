@@ -18,7 +18,7 @@ The management cluster acts as the **hub** — running the primary ArgoCD instan
 ┌─────────────────────────────────────────────────────┐
 │                   Proxmox Hosts                     │
 │  ┌───────────────────────────────────────────────┐  │
-│  │         Management Cluster (VLAN)             │  │
+│  │      Management Cluster (Dedicated VLAN)      │  │
 │  │                                               │  │
 │  │  ┌─────────┐  ┌────────┐  ┌──────────────┐   │  │
 │  │  │ ArgoCD  │  │Traefik │  │ Cert-Manager │   │  │
@@ -157,7 +157,8 @@ Key configuration variables:
 │   ├── andusystems-networking/       # Networking cluster apps
 │   ├── andusystems-fleetdock/        # FleetDock cluster apps
 │   └── andusystems-slimerio/         # Slimerio cluster apps
-└── scripts/                          # Utility scripts
+├── scripts/                          # Deployment helper scripts
+└── docs/                             # Project documentation
 ```
 
 ## Spoke Clusters
@@ -169,7 +170,7 @@ The management cluster's ArgoCD instance deploys applications to these downstrea
 | Monitoring    | Centralized observability              | Grafana, Prometheus, Loki, Tempo, Alloy, Homepage      |
 | Storage       | Persistent storage services            | MinIO (S3), Longhorn, Prometheus, Loki, Tempo          |
 | Networking    | Network services                       | PiHole (DNS), Longhorn, Prometheus, Loki               |
-| FleetDock     | Game server management                 | FleetDock, Longhorn, Prometheus, Loki                  |
+| FleetDock     | Game server management                 | Longhorn, Prometheus, Loki, Tempo                      |
 | Slimerio      | Application cluster                    | Slimerio app, Longhorn, Prometheus, Loki               |
 
 Each spoke cluster also receives its own Traefik ingress controller, cert-manager instance, Pangolin-Newt VPN connector, and full observability stack (Prometheus, Loki, Tempo, Alloy).

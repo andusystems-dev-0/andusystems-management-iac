@@ -174,6 +174,8 @@ Services must be deployed in a specific order due to dependencies:
 ```
 VMs → Kubernetes → ArgoCD + MetalLB → Longhorn → Forgejo
   → Traefik → Pangolin-Newt → Cert-Manager → Keycloak → Vault
+  → Observability (Prometheus, Loki, Tempo, Alloy)
+  → GitHub Runner (ARC)
   → Spoke Cluster Apps (Networking, Storage, Monitoring, FleetDock, Slimerio)
 ```
 

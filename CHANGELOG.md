@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Bumped Alloy resource limits to prevent OOMKilled on management cluster.
 - Enabled additional Ansible playbooks for Andusystems clusters in `apps.yml`.
 - Added policy rule for GitHub Actions in ArgoCD cleanup tasks.
-- Generated project documentation (README, architecture, development guide).
+- Generated and updated project documentation (README, architecture, development guide, changelog).
 
 ### Changed
 - Refactored GitHub Runner installation to use `helm` command directly instead of Ansible Helm module.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The andusystems-management repository implements a hub-spoke infrastructure model. A central **management cluster** runs ArgoCD as the single source of truth for GitOps deployments across multiple Kubernetes clusters, each isolated on its own VLAN.
+The andusystems-management repository implements a hub-spoke infrastructure model. A central **management cluster** runs ArgoCD as the single source of truth for GitOps deployments across multiple Kubernetes clusters, each isolated on its own dedicated VLAN.
 
 All infrastructure is hosted on Proxmox bare-metal servers connected through a managed router handling inter-VLAN routing.
 
@@ -71,7 +71,7 @@ Terraform provisions virtual machines on Proxmox using the `bpg/proxmox` provide
 - Static IPs assigned per VM with VLAN tagging on a shared bridge interface
 - SSH access configured via cloud-init with a dedicated service account
 
-Terraform providers used: `bpg/proxmox`, `hashicorp/kubernetes`, `hashicorp/helm`, `alekc/kubectl`.
+Terraform providers used: `bpg/proxmox ~> 0.93`, `hashicorp/kubernetes ~> 2.35`, `hashicorp/helm ~> 2.17`.
 
 ### Layer 2: Core Helm Releases
 
@@ -122,7 +122,9 @@ Each ArgoCD Application manifest follows a consistent pattern:
                           └────────────────────┘
 ```
 
-Each spoke cluster runs an Alloy collector (via the `grafana/k8s-monitoring` Helm chart) that pushes metrics, logs, and traces to the management cluster's observability stack. Alloy auto-discovers pod metrics via `prometheus.io/*` annotations and collects cluster events and pod logs.
+Each spoke cluster runs an Alloy collector (via the `grafana/k8s-monitoring` Helm chart) that pushes metrics, logs, and traces to the management cluster's observability stack. Alloy auto-discovers pod metrics via annotation-based autodiscovery and collects cluster events and pod logs.
+
+Prometheus has remote-write-receiver and OTLP write receiver features enabled to accept pushed metrics. Loki and Tempo accept logs and traces respectively via their standard push APIs.
 
 Grafana runs on the dedicated monitoring cluster and queries Prometheus, Loki, and Tempo for unified dashboards. Keycloak provides OIDC-based SSO for Grafana access.
 
@@ -160,6 +162,39 @@ External Traffic ──► Router (inter-VLAN routing)
 
 Each cluster has its own MetalLB instance providing LoadBalancer IPs within its VLAN subnet. A managed router handles inter-VLAN routing. VPN access is provided through Pangolin-Newt for administrative connectivity.
 
+### Deployment Pipeline
+
+```
+┌─ Terraform Layer 1 ──────────┐
+│  VMs on Proxmox              │
+│  Control Plane + Workers     │
+└──────────────────────────────┘
+           ↓
+┌─ Ansible Kubernetes ─────────┐
+│  K8s v1.31, Flannel CNI      │
+│  containerd, kubelet, etc.   │
+└──────────────────────────────┘
+           ↓
+┌─ Terraform Layer 2 ──────────┐
+│  MetalLB (L2 LB)            │
+│  ArgoCD (GitOps)             │
+└──────────────────────────────┘
+           ↓
+┌─ Ansible Applications ───────┐
+│  1. Longhorn (storage)       │
+│  2. Forgejo (git repo source)│
+│  3. Traefik (ingress)        │
+│  4. Cert-Manager (TLS)       │
+│  5. Keycloak (SSO)           │
+│  6. Vault (secrets)          │
+│  7. Pangolin-Newt (VPN)      │
+│  8. Prometheus, Loki, Tempo  │
+│  9. Alloy (collector)        │
+│  10. GitHub Runner (ARC)     │
+│  11. Spoke cluster apps      │
+└──────────────────────────────┘
+```
+
 ## Key Design Decisions
 
 ### Hub-Spoke ArgoCD Model
@@ -189,7 +224,7 @@ This avoids circular dependencies between infrastructure and cluster services.
 
 Loki, Tempo, and Prometheus each run in single-binary/standalone mode rather than distributed microservice mode. This reduces resource consumption for a homelab environment while still providing full LGTM (Loki, Grafana, Tempo, Mimir/Prometheus) stack capabilities.
 
-Loki and Tempo use MinIO (on the storage cluster) as their object storage backend for log chunks and trace data respectively.
+Loki and Tempo use MinIO (on the storage cluster) as their S3-compatible object storage backend for log chunks and trace data respectively.
 
 ### Storage Architecture
 
@@ -203,6 +238,17 @@ Keycloak provides SSO/OIDC for services like Grafana. Realm configuration is imp
 ### GitHub Actions Runner Controller
 
 Self-hosted GitHub Actions runners are deployed via the Actions Runner Controller (ARC) using Helm. The ARC controller manages runner scale sets that automatically provision runners for CI/CD workloads, with authentication via a GitHub Personal Access Token.
+
+### ArgoCD Application Pattern
+
+Each ArgoCD Application manifest uses a multi-source pattern:
+
+1. **Helm chart source** — references the upstream chart repository with a pinned version
+2. **Values source** — references the Forgejo-hosted management repository via `$values` ref, pulling per-app `values.yml` files
+
+This allows Helm chart versions to be managed independently from value overrides, and ensures all configuration lives in Git.
+
+Sync policies are set to automated with `prune` and `selfHeal` enabled, allowing ArgoCD to automatically reconcile drift.
 
 ## Spoke Cluster Architecture
 
@@ -231,12 +277,13 @@ Additionally, each cluster runs its specialized workloads:
 
 ## Invariants
 
-- **Deployment ordering**: VMs -> Kubernetes -> ArgoCD -> Longhorn -> Forgejo -> remaining services. Violating this order causes failures due to missing dependencies.
+- **Deployment ordering**: VMs → Kubernetes → ArgoCD → Longhorn → Forgejo → remaining services. Violating this order causes failures due to missing dependencies.
 - **Forgejo availability**: All ArgoCD applications reference Forgejo for Helm values. If Forgejo is unreachable, ArgoCD cannot sync applications.
 - **MetalLB requirement**: All LoadBalancer-type services depend on MetalLB for IP assignment. MetalLB must be healthy before any service can be exposed.
 - **Ansible Vault**: All secrets are stored in Ansible Vault. The vault password is required for any deployment operation.
 - **VLAN isolation**: Each cluster operates on a dedicated VLAN. Cross-cluster communication relies on the router for inter-VLAN routing.
 - **ArgoCD runs insecure**: The ArgoCD server runs in insecure (plaintext) mode internally; TLS is terminated at the Traefik ingress layer.
+- **Longhorn storage dependency**: Services requiring persistent volumes (Forgejo, Prometheus, Loki, Vault) depend on Longhorn being deployed and healthy.
 
 ## Kubernetes Details
 
