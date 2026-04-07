@@ -1,5 +1,7 @@
 ---
--<REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected>s.core.k8s:
+#<REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected>te the Kubernetes namespace and seed it with secrets needed by the Forgejo deployment.
+- name: Create forgejo namespace
+  kubernetes.core.k8s:
     state: present
     definition:
       apiVersion: v1
@@ -9,6 +11,8 @@
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
 
+# Store the admin credentials as a K8s secret so the Helm chart can configure
+# the initial Forgejo admin account without exposing the password in values.yml.
 - name: Create Forgejo admin secret
   kubernetes.core.k8s:
     state: present
@@ -25,6 +29,9 @@
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
 
+# --- Helm deployment ---
+# Install (or upgrade) Forgejo using the official OCI Helm chart with our custom values.
+# Waits up to 10 minutes for all resources to become ready.
 - name: Install Forgejo Helm chart
   command: >
     helm upgrade --install forgejo
@@ -38,6 +45,8 @@
   register: helm_install
   changed_when: "'has been upgraded' in helm_install.stdout or 'has been installed' in helm_install.stdout"
 
+# Block until the Forgejo pod passes its readiness probe, so subsequent API
+# calls don't race against a still-starting container.
 - name: Wait for Forgejo pod to be ready
   kubernetes.core.k8s_info:
     kind: Pod
@@ -52,6 +61,10 @@
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
 
+# --- Resolve the Forgejo in-cluster API endpoint ---
+# Retrieve the ClusterIP so we can build an internal URL for API calls routed
+# through the control plane node via SSH (the Ansible controller is on a
+# different VLAN and cannot reach ClusterIPs directly).
 - name: Get Forgejo ClusterIP
   command: >
     kubectl get svc forgejo-http -n forgejo
@@ -65,6 +78,8 @@
   set_fact:
     forgejo_internal_url: "http://{{ forgejo_cluster_ip.stdout }}:3000"
 
+# Poll the Forgejo API through the control plane until it responds successfully.
+# The pod may be ready before the HTTP server finishes its first-run migrations.
 - name: Wait for Forgejo API to be responsive (via control plane)
   command: >
     ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
@@ -75,6 +90,9 @@
   delay: 5
   changed_when: false
 
+# --- Organization setup ---
+# Ensure the "andusystems" organization exists. All IaC repos and team
+# memberships are scoped under this org.
 - name: Check if andusystems org exists
   command: >
     ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
@@ -95,7 +113,10 @@
     {{ forgejo_internal_url }}/api/v1/orgs'
   when: org_check.stdout != '200'
 
-# --- Create service + operator users ---
+# --- Create service and operator users ---
+# Provision the "sentinel" service account (used by CI/CD automation) and the
+# human operator account. Both are added to the andusystems Owners team so they
+# have full access to all org repos.
 - name: Define Forgejo users to create
   set_fact:
     forgejo_users:
@@ -135,6 +156,7 @@
   when: item.stdout != '200'
   no_log: true
 
+# Look up the Owners team ID so we can add users to it in the next step.
 - name: Get andusystems org Owners team ID
   shell: >
     ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
@@ -163,6 +185,8 @@
   failed_when: team_add_result.stdout not in ['204', '200']
 
 # --- Create all IaC repos under the andusystems org ---
+# Each VLAN-specific cluster has its own IaC repo. These are created as public
+# repos under the andusystems org so ArgoCD and developers can access them.
 - name: Define IaC repos to create on Forgejo
   set_fact:
     forgejo_iac_repos:
@@ -205,6 +229,11 @@
     label: "{{ item.item.name }}"
   when: item.stdout != '200'
 
+# --- Push this management repo to Forgejo ---
+# Add (or update) a "forgejo" git remote on the local clone and push the full
+# history to Forgejo via a git bundle transferred through the control plane.
+# This bootstraps the management repo content on the newly deployed Forgejo
+# instance so ArgoCD can begin syncing from it.
 - name: Check if forgejo git remote exists
   command: git -C {{ repo_root }} remote get-url forgejo
   register: remote_check
@@ -240,6 +269,9 @@
   register: push_result
   changed_when: true
 
+# --- Register repos with ArgoCD ---
+# Authenticate with ArgoCD and register every IaC repo so ArgoCD can monitor
+# them for changes and reconcile the declared state.
 - name: Log in to ArgoCD (for repo registration)
   shell: |
     argocd login {{ argocd_server_ip }} \
@@ -270,6 +302,8 @@
     - argocd_repo.rc != 0
     - "'remote repository is empty' not in argocd_repo.stderr"
 
+# --- Post-install summary ---
+# Print connection details and a reminder to generate a sentinel PAT.
 - name: Display Forgejo info
   debug:
     msg:

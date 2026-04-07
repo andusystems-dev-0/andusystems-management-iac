@@ -1,3 +1,6 @@
+# Entry point for the forgejo role.
+# Imports the install playbook which handles the full Forgejo deployment lifecycle:
+# namespace creation, Helm install, org/user provisioning, IaC repo setup, and ArgoCD registration.
 - name: main | install forgejo
   import_tasks: install.yml
   tags:

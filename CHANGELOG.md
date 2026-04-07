@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Documented Traefik configuration in development guide (providers, entrypoints, RBAC, additional arguments, dashboard).
 - Bumped Alloy resource limits to prevent OOMKilled on management cluster.
 - Enabled additional Ansible playbooks for Andusystems clusters in `apps.yml`.
 - Added policy rule for GitHub Actions in ArgoCD cleanup tasks.

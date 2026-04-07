@@ -295,6 +295,47 @@ To register a new spoke cluster with the management ArgoCD:
 
 5. **Add to deployment playbooks** — Import the new role in `deploy.yml` and/or `apps.yml`.
 
+## Traefik Configuration
+
+The Traefik ingress controller is configured via `apps/traefik/values.yml`. The ArgoCD Application manifest (`apps/traefik/manifest.yml`) deploys Traefik using Helm chart v32.1.1 into the `traefik` namespace, with a MetalLB-backed LoadBalancer service.
+
+### Providers
+
+Traefik is configured with two Kubernetes providers:
+
+| Provider             | Setting                       | Value  | Purpose                                      |
+|----------------------|-------------------------------|--------|----------------------------------------------|
+| `kubernetesIngress`  | `publishedService.enabled`    | `true` | Populates Ingress status with the LB address |
+| `kubernetesCRD`      | `enabled`                     | `true` | Enables Traefik IngressRoute CRDs            |
+| `kubernetesCRD`      | `allowCrossNamespace`         | `true` | Routes can reference services in other namespaces |
+| `kubernetesCRD`      | `allowExternalNameServices`   | `true` | Routes can target ExternalName services      |
+
+### Entrypoints (Ports)
+
+| Entrypoint  | Container Port | Exposed Port | Protocol | Notes                              |
+|-------------|----------------|--------------|----------|------------------------------------|
+| `web`       | 8000           | 80           | TCP      | HTTP traffic                       |
+| `websecure` | 8443           | 443          | TCP      | HTTPS traffic                      |
+
+HTTP-to-HTTPS redirection is commented out until TLS is fully configured. To enable it, uncomment the `redirections` block under the `web` entrypoint.
+
+### RBAC
+
+RBAC is enabled cluster-wide (`namespaced: false`) to support cross-namespace routing. An additional `ClusterRole` and `ClusterRoleBinding` (`traefik-configmap-access`) are created via `extraObjects` to grant the `management-traefik` service account read access to ConfigMaps (`get`, `list`, `watch`). This resolves a "configmaps forbidden" error that occurs with the default Helm RBAC.
+
+### Additional Arguments
+
+The following CLI arguments are passed to Traefik via `additionalArguments`:
+
+- `--accesslog=true` — Enables access logging for debugging requests
+- `--log.level=DEBUG` — Sets log verbosity to DEBUG
+
+These should be adjusted for production (e.g., set log level to `WARN` or `ERROR`).
+
+### Dashboard
+
+The Traefik dashboard and API are commented out in the values file. To enable the dashboard, uncomment the `ingressRoute.dashboard` and `api` sections and configure appropriate host matching rules and TLS settings.
+
 ## Troubleshooting
 
 ### ArgoCD Sync Issues
