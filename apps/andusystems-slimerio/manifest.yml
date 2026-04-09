@@ -23,7 +23,7 @@ spec:
             annotations:
               metallb.io/address-pool: default
               metallb.io/loadBalancerIPs: "{{ slimerio_traefik_server_ip }}"
-    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-slimerio.git
       targetRevision: HEAD
       ref: values
   destination:
@@ -53,7 +53,7 @@ spec:
       helm:
         valueFiles:
           - $values/apps/cert-manager/values.yml
-    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-slimerio.git
       targetRevision: HEAD
       ref: values
   destination:
@@ -85,7 +85,7 @@ spec:
       helm:
         valueFiles:
           - $values/apps/pangolin-newt/values.yml
-    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-slimerio.git
       targetRevision: HEAD
       ref: values
   destination:
@@ -115,7 +115,7 @@ spec:
       helm:
         valueFiles:
           - $values/apps/longhorn/values.yml
-    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-slimerio.git
       targetRevision: HEAD
       ref: values
   destination:
@@ -152,7 +152,7 @@ spec:
       helm:
         valueFiles:
           - $values/apps/kube-prometheus-stack/values.yml
-    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-slimerio.git
       targetRevision: HEAD
       ref: values
   destination:
@@ -183,7 +183,7 @@ spec:
       helm:
         valueFiles:
           - $values/apps/loki/values.yml
-    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-slimerio.git
       targetRevision: HEAD
       ref: values
   destination:
@@ -213,7 +213,7 @@ spec:
       helm:
         valueFiles:
           - $values/apps/tempo/values.yml
-    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-slimerio.git
       targetRevision: HEAD
       ref: values
   destination:
@@ -243,7 +243,7 @@ spec:
       helm:
         valueFiles:
           - $values/apps/alloy/values.yml
-    - repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-slimerio.git
       targetRevision: HEAD
       ref: values
   destination:
@@ -267,7 +267,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:Andusystems/andusystems-slimerio.git
+    repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-slimerio.git
     targetRevision: HEAD
     path: apps/slimerio
   destination:

@@ -269,6 +269,58 @@
   register: push_result
   changed_when: true
 
+# --- Push spoke cluster repos to Forgejo ---
+# The forgejo_iac_repos creation loop above creates EMPTY repos for every spoke
+# cluster (storage, monitoring, networking, fleetdock, slimerio). ArgoCD's
+# Application resources for those clusters reference forgejo via the multi-source
+# `$values` ref pattern; without content in the repo, every spoke Application
+# fails to render with "failed to get git client for repo".
+#
+# This block bundles each spoke cluster's local clone (assumed to live at
+# /home/admin/andusystems/<repo-name>) and pushes the full history to its
+# now-empty Forgejo repo, using the same control-plane git-proxy pattern as
+# the management push above. Local clones that don't exist on the workstation
+# are gracefully skipped — re-run after cloning to populate them later.
+- name: Define spoke cluster repos to push to Forgejo
+  set_fact:
+    forgejo_spoke_repos:
+      - { name: andusystems-monitoring,  path: /home/admin/andusystems/andusystems-monitoring  }
+      - { name: andusystems-networking,  path: /home/admin/andusystems/andusystems-networking  }
+      - { name: andusystems-storage,     path: /home/admin/andusystems/andusystems-storage     }
+      - { name: andusystems-fleetdock,   path: /home/admin/andusystems/andusystems-fleetdock   }
+      - { name: andusystems-slimerio,    path: /home/admin/andusystems/andusystems-slimerio    }
+
+- name: Check if spoke cluster local clones exist
+  stat:
+    path: "{{ item.path }}/.git"
+  loop: "{{ forgejo_spoke_repos }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: spoke_clone_check
+
+- name: Push spoke cluster repos to Forgejo (via control plane as git proxy)
+  shell: |
+    set -e
+    cd {{ item.item.path }}
+    git bundle create /tmp/{{ item.item.name }}.bundle --all
+    scp -o StrictHostKeyChecking=no /tmp/{{ item.item.name }}.bundle \
+        {{ ssh_user }}@{{ control_plane_ip }}:/tmp/
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }} bash -c '
+      set -e
+      cd /tmp && rm -rf {{ item.item.name }}-repo
+      git clone {{ item.item.name }}.bundle {{ item.item.name }}-repo
+      cd {{ item.item.name }}-repo
+      git remote add forgejo http://forgejo_admin:{{ forgejo_admin_password }}@{{ forgejo_cluster_ip.stdout }}:3000/andusystems/{{ item.item.name }}.git
+      git push forgejo HEAD:main --force
+      cd /tmp && rm -rf {{ item.item.name }}-repo {{ item.item.name }}.bundle
+    '
+    rm -f /tmp/{{ item.item.name }}.bundle
+  loop: "{{ spoke_clone_check.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.stat.exists and item.stat.isdir
+  changed_when: true
+
 # --- Register repos with ArgoCD ---
 # Authenticate with ArgoCD and register every IaC repo so ArgoCD can monitor
 # them for changes and reconcile the declared state.

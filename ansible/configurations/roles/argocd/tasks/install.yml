@@ -202,15 +202,13 @@
 # using the cluster-internal URL (forgejo-http.forgejo.svc.cluster.local:3000),
 # which avoids the TLS/cert-manager chicken-and-egg on a fresh deploy.
 
-# Add slimerio repository
-- name: Add slimerio repository to ArgoCD
-  shell: |
-    argocd repo add git@github.com:Andusystems/andusystems-slimerio.git \
-      --ssh-private-key-path "{{ slimerio_ssh_private_key_path }}" \
-      --upsert
-  register: repo_result
-  changed_when: '"already exists" not in repo_result.stdout'
-  when: login_result.rc == 0
+# NOTE: The slimerio repo is registered by the forgejo role
+# (ansible/configurations/roles/forgejo/tasks/install.yml) along with all the
+# other Forgejo IaC repos, using the cluster-internal Forgejo URL. The previous
+# `argocd repo add git@github.com:...` registration was removed because it
+# duplicated the same logical repo with a GitHub SSH URL — drifting between
+# Forgejo (canonical) and GitHub (sanitized mirror) is a known source of
+# corruption, so the entire ArgoCD setup pulls from Forgejo only.
 
 # Register slimerio cluster
 - name: Check if slimerio cluster is already registered
@@ -265,6 +263,62 @@
     - login_result.rc == 0
     - cluster_add_result is defined
 
+# Register storage cluster
+# The storage repo is hosted on the cluster-internal Forgejo URL
+# (http://forgejo-http.forgejo.svc.cluster.local:3000/...) so no explicit
+# `argocd repo add` is needed — ArgoCD pulls anonymously over HTTP.
+- name: Check if storage cluster is already registered
+  shell: argocd cluster get andusystems-storage
+  register: storage_cluster_check
+  failed_when: false
+  changed_when: false
+  when: login_result.rc == 0
+
+- name: Get contexts from storage kubeconfig
+  shell: |
+    KUBECONFIG={{ storage_kubeconfig }} kubectl config get-contexts -o name
+  register: storage_kubecontexts
+  changed_when: false
+  when:
+    - login_result.rc == 0
+    - storage_cluster_check.rc != 0
+
+- name: Add storage cluster to ArgoCD
+  shell: |
+    argocd cluster add {{ storage_kubecontexts.stdout_lines[0] }} \
+      --kubeconfig {{ storage_kubeconfig }} \
+      --name andusystems-storage \
+      --system-namespace kube-system \
+      --insecure \
+      --upsert \
+      --yes
+  register: storage_cluster_add_result
+  changed_when: "'added' in storage_cluster_add_result.stdout"
+  when:
+    - login_result.rc == 0
+    - storage_cluster_check.rc != 0
+    - storage_kubecontexts.stdout_lines | length > 0
+  no_log: true
+
+- name: Label storage cluster secret for ApplicationSet generator
+  shell: |
+    SECRET_NAME=$(kubectl -n argocd get secrets \
+      -l argocd.argoproj.io/secret-type=cluster \
+      -o jsonpath='{.items[?(@.data.name=="YW5kdXN5c3RlbXMtc3RvcmFnZQ==")].metadata.name}')
+    if [ -z "$SECRET_NAME" ]; then
+      echo "ERROR: Could not find storage cluster secret"
+      exit 1
+    fi
+    kubectl -n argocd label secret "$SECRET_NAME" \
+      type=andusystems-storage \
+      region=us \
+      --overwrite
+  environment:
+    KUBECONFIG: "{{ repo_root }}/kubeconfig"
+  when:
+    - login_result.rc == 0
+    - storage_cluster_add_result is defined
+
 - name: Verify cluster was added
   shell: argocd cluster list
   register: cluster_list
@@ -277,5 +331,5 @@
   when: login_result.rc == 0
 
 # TODO: Re-enable other repo/cluster registrations when remotes are set up
-# Repos: management, monitoring, fleetdock, networking, storage
-# Clusters: monitoring, networking, fleetdock, storage
+# Repos: management, monitoring, fleetdock, networking
+# Clusters: monitoring, networking, fleetdock

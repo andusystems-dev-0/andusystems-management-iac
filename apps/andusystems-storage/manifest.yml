@@ -284,3 +284,33 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+---
+#
+# Nexus Repository OSS — private artifact registry (Docker, Maven, npm, etc.)
+#
+# Single-source (path) — no upstream Helm chart, the manifests are bare YAML
+# in the storage repo. The bootstrap secrets (nexus-minio-credentials,
+# nexus-admin-bootstrap) are created out-of-band by the storage cluster's
+# Ansible role from apps/nexus/manifest.yml; ArgoCD picks up from there.
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: storage-nexus
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-storage.git
+    targetRevision: HEAD
+    path: apps/nexus/manifests
+  destination:
+    name: andusystems-storage
+    namespace: nexus
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
