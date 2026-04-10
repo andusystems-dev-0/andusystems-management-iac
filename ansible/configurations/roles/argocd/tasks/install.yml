@@ -75,7 +75,14 @@
   environment:
     KUBECONFIG: "{{ repo_root }}/kubeconfig"
 
-- name: Temporarily patch ArgoCD service to LoadBalancer for bootstrap
+- name: Patch ArgoCD service to LoadBalancer with pinned MetalLB IP
+  # PIN the LoadBalancer IP via MetalLB annotations to whatever is in
+  # vault_argocd_server_ip. Without this pin, MetalLB picks the next free
+  # IP from the default pool every redeploy and the assigned IP can drift
+  # away from what the vault var thinks. The drift silently breaks every
+  # downstream `argocd login {{ argocd_server_ip }}` call (traefik,
+  # forgejo, keycloak, vault, andusystems-* roles), making `apps.sh`
+  # unusable until someone notices and updates the vault by hand.
   kubernetes.core.k8s:
     state: present
     definition:
@@ -84,6 +91,9 @@
       metadata:
         name: argocd-server
         namespace: argocd
+        annotations:
+          metallb.io/address-pool: default
+          metallb.io/loadBalancerIPs: "{{ argocd_server_ip }}"
       spec:
         type: LoadBalancer
   environment:
@@ -330,6 +340,32 @@
   changed_when: false
   when: login_result.rc == 0
 
+# Stat the portfolio kubeconfig BEFORE attempting to read contexts. kubectl
+# `config get-contexts` against a missing kubeconfig path silently returns
+# exit 0 with empty stdout, which would let the cluster-add step skip without
+# raising — and the downstream label step would then fire against a secret
+# that doesn't exist. Fail loud and early instead.
+- name: Stat portfolio kubeconfig
+  stat:
+    path: "{{ portfolio_kubeconfig }}"
+  register: portfolio_kubeconfig_stat
+  when:
+    - login_result.rc == 0
+    - portfolio_cluster_check.rc != 0
+
+- name: Fail if portfolio kubeconfig is missing
+  fail:
+    msg: |
+      portfolio_kubeconfig points at {{ portfolio_kubeconfig }} but no file
+      exists at that path. The portfolio cluster must be bootstrapped first
+      via the andusystems-portfolio repo's portfolio.yml playbook (which
+      generates the kubeconfig at the end of its kubernetes role) before the
+      management ArgoCD can register it as a destination.
+  when:
+    - login_result.rc == 0
+    - portfolio_cluster_check.rc != 0
+    - not portfolio_kubeconfig_stat.stat.exists
+
 - name: Get contexts from portfolio kubeconfig
   shell: |
     KUBECONFIG={{ portfolio_kubeconfig }} kubectl config get-contexts -o name
@@ -371,9 +407,13 @@
       --overwrite
   environment:
     KUBECONFIG: "{{ repo_root }}/kubeconfig"
+  # Only label if we actually ran (and succeeded) the cluster-add. A
+  # `skipped` task still satisfies `is defined`, which is what bit us
+  # before the stat-and-fail guard above.
   when:
     - login_result.rc == 0
     - portfolio_cluster_add_result is defined
+    - not (portfolio_cluster_add_result.skipped | default(false))
 
 - name: Verify cluster was added
   shell: argocd cluster list

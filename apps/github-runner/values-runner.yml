@@ -21,16 +21,79 @@ runnerScaleSetName: "self-hosted"
 minRunners: 0
 maxRunners: 3
 
-# Docker-in-Docker mode for building container images
-containerMode:
-  type: dind
+# containerMode is intentionally NOT set. The chart's `containerMode: dind`
+# auto-injects a dind sidecar with no way for `template.spec` to override
+# containers by name (server-side apply rejects duplicate-key entries),
+# so we provide the entire dind init container + volumes + runner env
+# manually below — equivalent to what the chart would have rendered for
+# `containerMode.type=dind` in v0.14.0.
+containerMode: {}
 
 template:
   spec:
+    # Pin registry.andusystems.com to the storage cluster's Traefik LB IP.
+    # Public DNS for that hostname routes through the Pangolin overlay
+    # (100.96.x.x), but the management cluster's pod network has no path
+    # into that overlay — Newt is an INBOUND tunnel from Pangolin into the
+    # cluster, not an outbound route from pods to Pangolin-protected
+    # resources. Bypass Pangolin entirely for cross-cluster traffic by
+    # going straight to storage Traefik via plain L3 cross-VLAN routing.
+    #
+    # Storage Traefik serves a real Let's Encrypt cert for this hostname
+    # (apps/nexus/manifests/cert.yml in andusystems-storage), so dockerd
+    # and buildkit validate the chain cleanly without any insecure flag.
+    hostAliases:
+      - ip: "10.238.40.21"
+        hostnames:
+          - "registry.andusystems.com"
+    initContainers:
+      # Mirror what the chart's containerMode.dind would have generated:
+      # copy the runner externals into a shared emptyDir so the runner
+      # container can use them at runtime.
+      - name: init-dind-externals
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["cp"]
+        args: ["-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
+        volumeMounts:
+          - name: dind-externals
+            mountPath: /home/runner/tmpDir
+      # Native sidecar (k8s 1.28+): an init container with restartPolicy:
+      # Always runs alongside the main containers for the pod's lifetime.
+      - name: dind
+        image: docker:dind
+        args:
+          - dockerd
+          - --host=unix:///var/run/docker.sock
+          - --group=123
+        restartPolicy: Always
+        securityContext:
+          privileged: true
+        startupProbe:
+          exec:
+            command:
+              - docker
+              - info
+          initialDelaySeconds: 0
+          failureThreshold: 24
+          periodSeconds: 5
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+          - name: dind-externals
+            mountPath: /home/runner/externals
     containers:
       - name: runner
         image: ghcr.io/actions/actions-runner:latest
         command: ["/home/runner/run.sh"]
+        env:
+          # Tell the runner container to talk to the dind sidecar via the
+          # shared unix socket instead of trying to launch its own daemon.
+          - name: DOCKER_HOST
+            value: unix:///var/run/docker.sock
+          - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
+            value: "120"
         resources:
           requests:
             cpu: 500m
@@ -38,3 +101,15 @@ template:
           limits:
             cpu: "2"
             memory: 4Gi
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+    volumes:
+      - name: work
+        emptyDir: {}
+      - name: dind-sock
+        emptyDir: {}
+      - name: dind-externals
+        emptyDir: {}
