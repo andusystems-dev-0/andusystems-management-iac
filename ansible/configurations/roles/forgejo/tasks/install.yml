@@ -1,5 +1,5 @@
 ---
-#<REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected>te the Kubernetes namespace and seed it with secrets needed by the Forgejo deployment.
+#<REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected>te the Kubernetes namespace and seed it with secrets needed by the Forgejo deployment.
 - name: Create forgejo namespace
   kubernetes.core.k8s:
     state: present
@@ -319,6 +319,89 @@
     '
     rm -f /tmp/{{ item.item.name }}.bundle
   loop: "{{ spoke_clone_check.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.stat.exists and item.stat.isdir
+  changed_when: true
+
+# --- Push extra (non-cluster-IaC) repos to Forgejo ---
+# These repos are not cluster IaC and therefore aren't part of forgejo_iac_repos
+# (which drives the ArgoCD repo registration loop below). They live on Forgejo
+# purely so the homelab has a single internal source of truth — dotfiles, the
+# Sentinel SDLC engine, and the Portfolio app. The repo NAME is what shows up
+# in Forgejo under the andusystems org; case is preserved (note the capital
+# "P" in Portfolio, which is distinct from the lowercase andusystems-portfolio
+# spoke cluster repo above).
+#
+# This block: (1) creates the empty Forgejo repo if missing, (2) stats the
+# local clone, (3) bundles and pushes via the same control-plane git-proxy
+# pattern as the spoke push above. Missing local clones are skipped — re-run
+# after cloning the repo locally to populate it.
+- name: Define extra repos to push to Forgejo
+  set_fact:
+    forgejo_extra_repos:
+      - name: andusystems-arch
+        description: "Arch Linux dotfiles and workstation config"
+        path: /home/admin/andusystems/andusystems-arch
+      - name: andusystems-sentinel
+        description: "Sentinel autonomous SDLC engine"
+        path: /home/admin/andusystems/andusystems-sentinel
+      - name: Portfolio
+        description: "Portfolio application"
+        path: /home/admin/andusystems/Portfolio
+
+- name: Check if extra Forgejo repo exists
+  shell: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf -o /dev/null -w "%{http_code}"
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    {{ forgejo_internal_url }}/api/v1/repos/andusystems/{{ item.name }}'
+  register: extra_repo_check
+  loop: "{{ forgejo_extra_repos }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+  failed_when: false
+
+- name: Create extra Forgejo repo
+  shell: >
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf -X POST
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    -H "Content-Type: application/json"
+    -d "{\"name\":\"{{ item.item.name }}\",\"description\":\"{{ item.item.description }}\",\"private\":false,\"auto_init\":false}"
+    {{ forgejo_internal_url }}/api/v1/orgs/andusystems/repos'
+  loop: "{{ extra_repo_check.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.stdout != '200'
+
+- name: Check if extra repo local clones exist
+  stat:
+    path: "{{ item.path }}/.git"
+  loop: "{{ forgejo_extra_repos }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: extra_clone_check
+
+- name: Push extra repos to Forgejo (via control plane as git proxy)
+  shell: |
+    set -e
+    cd {{ item.item.path }}
+    git bundle create /tmp/{{ item.item.name }}.bundle --all
+    scp -o StrictHostKeyChecking=no /tmp/{{ item.item.name }}.bundle \
+        {{ ssh_user }}@{{ control_plane_ip }}:/tmp/
+    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }} bash -c '
+      set -e
+      cd /tmp && rm -rf {{ item.item.name }}-repo
+      git clone {{ item.item.name }}.bundle {{ item.item.name }}-repo
+      cd {{ item.item.name }}-repo
+      git remote add forgejo http://forgejo_admin:{{ forgejo_admin_password }}@{{ forgejo_cluster_ip.stdout }}:3000/andusystems/{{ item.item.name }}.git
+      git push forgejo HEAD:main --force
+      cd /tmp && rm -rf {{ item.item.name }}-repo {{ item.item.name }}.bundle
+    '
+    rm -f /tmp/{{ item.item.name }}.bundle
+  loop: "{{ extra_clone_check.results }}"
   loop_control:
     label: "{{ item.item.name }}"
   when: item.stat.exists and item.stat.isdir

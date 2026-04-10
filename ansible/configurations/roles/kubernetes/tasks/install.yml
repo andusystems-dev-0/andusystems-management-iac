@@ -14,6 +14,12 @@
       GODEBUG: "{{ lookup('env', 'GODEBUG') }},asyncpreemptoff=1"
 
 # --- Install Kubernetes dependencies on all nodes ---
+- name: install | Wait for cloud-init to finish
+  ansible.builtin.command:
+    cmd: cloud-init status --wait
+  changed_when: false
+  failed_when: false
+
 - name: install | Wait for apt locks to release
   ansible.builtin.shell: |
     while fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; do
@@ -45,6 +51,7 @@
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: 3600
+    lock_timeout: 600
 
 - name: install | Install required packages
   ansible.builtin.apt:
@@ -55,6 +62,7 @@
       - kubectl
       - conntrack
     state: present
+    lock_timeout: 600
 
 - name: install | Hold Kubernetes packages
   ansible.builtin.dpkg_selections:
@@ -135,6 +143,7 @@
     cmd: kubeadm reset -f
   changed_when: true
   ignore_errors: true
+  when: inventory_hostname in groups['controllers']
 
 - name: install | Clean CNI interfaces
   ansible.builtin.shell: |
@@ -144,18 +153,21 @@
   args:
     executable: /bin/bash
   changed_when: false
+  when: inventory_hostname in groups['controllers']
 
 - name: install | Initialize Kubernetes cluster
   ansible.builtin.command:
     cmd: kubeadm init --pod-network-cidr={{ pod_network_cidr }}
   register: kubeadm_init
   changed_when: "'Your Kubernetes control-plane has been initialized successfully' in kubeadm_init.stdout"
+  when: inventory_hostname in groups['controllers']
 
 - name: install | Create .kube directory
   ansible.builtin.file:
     path: /home/{{ ssh_user }}/.kube
     state: directory
     mode: '0700'
+  when: inventory_hostname in groups['controllers']
 
 - name: install | Copy admin.conf to user's kubeconfig
   ansible.builtin.copy:
@@ -165,6 +177,7 @@
     owner: "{{ ssh_user }}"
     group: "{{ ssh_user }}"
     mode: '0600'
+  when: inventory_hostname in groups['controllers']
 
 - name: install | Set ownership of kubeconfig
   ansible.builtin.file:
@@ -172,6 +185,7 @@
     owner: "{{ ssh_user }}"
     group: "{{ ssh_user }}"
     mode: '0600'
+  when: inventory_hostname in groups['controllers']
 
 - name: install | Check if cluster is already initialized
   ansible.builtin.stat:
@@ -195,6 +209,7 @@
     join_command: "{{ join_command_raw.stdout }}"
     cacheable: true
   run_once: true
+  when: inventory_hostname in groups['controllers'] and k8s_config.stat.exists
 
 - name: install | Install Flannel CNI
   ansible.builtin.command:
@@ -203,6 +218,7 @@
   run_once: true
   environment:
     KUBECONFIG: "/home/{{ ssh_user }}/.kube/config"
+  when: inventory_hostname in groups['controllers']
 
 - name: install | Fetch kubeconfig to local machine
   ansible.builtin.fetch:
@@ -210,6 +226,7 @@
     dest: "{{ repo_root }}/kubeconfig"
     flat: true
   run_once: true
+  when: inventory_hostname in groups['controllers']
 
 # --- Join worker nodes ---
 - name: install | Reset kubeadm on worker

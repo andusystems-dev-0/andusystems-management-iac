@@ -415,6 +415,167 @@
     - portfolio_cluster_add_result is defined
     - not (portfolio_cluster_add_result.skipped | default(false))
 
+# Register monitoring cluster
+# The monitoring repo is hosted on the cluster-internal Forgejo URL and is
+# registered by the forgejo role. Without this cluster registration, every
+# `monitoring-*` Application in ArgoCD reports Unknown sync/health because
+# its `destination.name: andusystems-monitoring` resolves to no cluster
+# secret — see the slimerio/storage/portfolio blocks above for the same
+# pattern.
+- name: Check if monitoring cluster is already registered
+  shell: argocd cluster get andusystems-monitoring
+  register: monitoring_cluster_check
+  failed_when: false
+  changed_when: false
+  when: login_result.rc == 0
+
+- name: Stat monitoring kubeconfig
+  stat:
+    path: "{{ monitoring_kubeconfig }}"
+  register: monitoring_kubeconfig_stat
+  when:
+    - login_result.rc == 0
+    - monitoring_cluster_check.rc != 0
+
+- name: Fail if monitoring kubeconfig is missing
+  fail:
+    msg: |
+      monitoring_kubeconfig points at {{ monitoring_kubeconfig }} but no file
+      exists at that path. The monitoring cluster must be bootstrapped first
+      via the andusystems-monitoring repo (whose kubernetes role generates
+      the kubeconfig at the end of cluster init) before the management
+      ArgoCD can register it as a destination.
+  when:
+    - login_result.rc == 0
+    - monitoring_cluster_check.rc != 0
+    - not monitoring_kubeconfig_stat.stat.exists
+
+- name: Get contexts from monitoring kubeconfig
+  shell: |
+    KUBECONFIG={{ monitoring_kubeconfig }} kubectl config get-contexts -o name
+  register: monitoring_kubecontexts
+  changed_when: false
+  when:
+    - login_result.rc == 0
+    - monitoring_cluster_check.rc != 0
+
+- name: Add monitoring cluster to ArgoCD
+  shell: |
+    argocd cluster add {{ monitoring_kubecontexts.stdout_lines[0] }} \
+      --kubeconfig {{ monitoring_kubeconfig }} \
+      --name andusystems-monitoring \
+      --system-namespace kube-system \
+      --insecure \
+      --upsert \
+      --yes
+  register: monitoring_cluster_add_result
+  changed_when: "'added' in monitoring_cluster_add_result.stdout"
+  when:
+    - login_result.rc == 0
+    - monitoring_cluster_check.rc != 0
+    - monitoring_kubecontexts.stdout_lines | length > 0
+  no_log: true
+
+- name: Label monitoring cluster secret for ApplicationSet generator
+  shell: |
+    SECRET_NAME=$(kubectl -n argocd get secrets \
+      -l argocd.argoproj.io/secret-type=cluster \
+      -o jsonpath='{.items[?(@.data.name=="YW5kdXN5c3RlbXMtbW9uaXRvcmluZw==")].metadata.name}')
+    if [ -z "$SECRET_NAME" ]; then
+      echo "ERROR: Could not find monitoring cluster secret"
+      exit 1
+    fi
+    kubectl -n argocd label secret "$SECRET_NAME" \
+      type=andusystems-monitoring \
+      region=us \
+      --overwrite
+  environment:
+    KUBECONFIG: "{{ repo_root }}/kubeconfig"
+  when:
+    - login_result.rc == 0
+    - monitoring_cluster_add_result is defined
+    - not (monitoring_cluster_add_result.skipped | default(false))
+
+# Register networking cluster
+# Same pattern as monitoring/slimerio/storage/portfolio. Without this,
+# every `networking-*` Application reports Unknown sync/health because
+# its `destination.name: andusystems-networking` resolves to no cluster
+# secret. The networking IaC repo is registered separately by the forgejo
+# role on the cluster-internal Forgejo URL.
+- name: Check if networking cluster is already registered
+  shell: argocd cluster get andusystems-networking
+  register: networking_cluster_check
+  failed_when: false
+  changed_when: false
+  when: login_result.rc == 0
+
+- name: Stat networking kubeconfig
+  stat:
+    path: "{{ networking_kubeconfig }}"
+  register: networking_kubeconfig_stat
+  when:
+    - login_result.rc == 0
+    - networking_cluster_check.rc != 0
+
+- name: Fail if networking kubeconfig is missing
+  fail:
+    msg: |
+      networking_kubeconfig points at {{ networking_kubeconfig }} but no file
+      exists at that path. The networking cluster must be bootstrapped first
+      via the andusystems-networking repo (whose kubernetes role generates
+      the kubeconfig at the end of cluster init) before the management
+      ArgoCD can register it as a destination.
+  when:
+    - login_result.rc == 0
+    - networking_cluster_check.rc != 0
+    - not networking_kubeconfig_stat.stat.exists
+
+- name: Get contexts from networking kubeconfig
+  shell: |
+    KUBECONFIG={{ networking_kubeconfig }} kubectl config get-contexts -o name
+  register: networking_kubecontexts
+  changed_when: false
+  when:
+    - login_result.rc == 0
+    - networking_cluster_check.rc != 0
+
+- name: Add networking cluster to ArgoCD
+  shell: |
+    argocd cluster add {{ networking_kubecontexts.stdout_lines[0] }} \
+      --kubeconfig {{ networking_kubeconfig }} \
+      --name andusystems-networking \
+      --system-namespace kube-system \
+      --insecure \
+      --upsert \
+      --yes
+  register: networking_cluster_add_result
+  changed_when: "'added' in networking_cluster_add_result.stdout"
+  when:
+    - login_result.rc == 0
+    - networking_cluster_check.rc != 0
+    - networking_kubecontexts.stdout_lines | length > 0
+  no_log: true
+
+- name: Label networking cluster secret for ApplicationSet generator
+  shell: |
+    SECRET_NAME=$(kubectl -n argocd get secrets \
+      -l argocd.argoproj.io/secret-type=cluster \
+      -o jsonpath='{.items[?(@.data.name=="YW5kdXN5c3RlbXMtbmV0d29ya2luZw==")].metadata.name}')
+    if [ -z "$SECRET_NAME" ]; then
+      echo "ERROR: Could not find networking cluster secret"
+      exit 1
+    fi
+    kubectl -n argocd label secret "$SECRET_NAME" \
+      type=andusystems-networking \
+      region=us \
+      --overwrite
+  environment:
+    KUBECONFIG: "{{ repo_root }}/kubeconfig"
+  when:
+    - login_result.rc == 0
+    - networking_cluster_add_result is defined
+    - not (networking_cluster_add_result.skipped | default(false))
+
 - name: Verify cluster was added
   shell: argocd cluster list
   register: cluster_list
@@ -427,5 +588,5 @@
   when: login_result.rc == 0
 
 # TODO: Re-enable other repo/cluster registrations when remotes are set up
-# Repos: management, monitoring, fleetdock, networking
-# Clusters: monitoring, networking, fleetdock
+# Repos: management, fleetdock
+# Clusters: fleetdock
