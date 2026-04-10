@@ -202,6 +202,8 @@
         description: "FleetDock cluster IaC (VLAN 30/60)"
       - name: "andusystems-slimerio"
         description: "Slimerio cluster IaC"
+      - name: "andusystems-portfolio"
+        description: "Portfolio cluster IaC"
 
 - name: Check if Forgejo IaC repo exists
   shell: >
@@ -289,6 +291,7 @@
       - { name: andusystems-storage,     path: /home/admin/andusystems/andusystems-storage     }
       - { name: andusystems-fleetdock,   path: /home/admin/andusystems/andusystems-fleetdock   }
       - { name: andusystems-slimerio,    path: /home/admin/andusystems/andusystems-slimerio    }
+      - { name: andusystems-portfolio,   path: /home/admin/andusystems/andusystems-portfolio   }
 
 - name: Check if spoke cluster local clones exist
   stat:

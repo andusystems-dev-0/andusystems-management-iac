@@ -97,6 +97,10 @@ slimerio_kubeconfig: "{{ vault_slimerio_kubeconfig }}"
 slimerio_ssh_private_key_path: "{{ vault_slimerio_ssh_private_key_path }}"
 slimerio_traefik_server_ip: "{{ vault_slimerio_traefik_server_ip }}"
 
-# GitHub Actions Runner
+# Portfolio cluster
+portfolio_repo_root: "{{ vault_portfolio_repo_root }}"
+portfolio_kubeconfig: "{{ vault_portfolio_kubeconfig }}"
+
+# GitHub Actions Runner (repo-scoped — see apps/github-runner/values-runner.yml)
 github_runner_pat: "{{ vault_github_runner_pat }}"
-github_runner_org: "{{ vault_github_runner_org }}"
+github_runner_repo: "{{ vault_github_runner_repo }}"

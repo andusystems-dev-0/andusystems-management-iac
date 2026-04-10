@@ -1,0 +1,5 @@
+- name: main | install andusystems-portfolio
+  import_tasks: install.yml
+  tags:
+    - andusystems-portfolio
+    - install

@@ -1,0 +1,11 @@
+- name: Install Portfolio Cluster Apps
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: andusystems-portfolio
+      tags:
+        - andusystems-portfolio
+        - apps
+        - install

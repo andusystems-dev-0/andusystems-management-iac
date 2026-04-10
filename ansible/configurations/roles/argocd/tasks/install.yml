@@ -319,6 +319,62 @@
     - login_result.rc == 0
     - storage_cluster_add_result is defined
 
+# Register portfolio cluster
+# The portfolio repo is hosted on the cluster-internal Forgejo URL
+# (http://forgejo-http.forgejo.svc.cluster.local:3000/...) so no explicit
+# `argocd repo add` is needed beyond the one performed by the forgejo role.
+- name: Check if portfolio cluster is already registered
+  shell: argocd cluster get andusystems-portfolio
+  register: portfolio_cluster_check
+  failed_when: false
+  changed_when: false
+  when: login_result.rc == 0
+
+- name: Get contexts from portfolio kubeconfig
+  shell: |
+    KUBECONFIG={{ portfolio_kubeconfig }} kubectl config get-contexts -o name
+  register: portfolio_kubecontexts
+  changed_when: false
+  when:
+    - login_result.rc == 0
+    - portfolio_cluster_check.rc != 0
+
+- name: Add portfolio cluster to ArgoCD
+  shell: |
+    argocd cluster add {{ portfolio_kubecontexts.stdout_lines[0] }} \
+      --kubeconfig {{ portfolio_kubeconfig }} \
+      --name andusystems-portfolio \
+      --system-namespace kube-system \
+      --insecure \
+      --upsert \
+      --yes
+  register: portfolio_cluster_add_result
+  changed_when: "'added' in portfolio_cluster_add_result.stdout"
+  when:
+    - login_result.rc == 0
+    - portfolio_cluster_check.rc != 0
+    - portfolio_kubecontexts.stdout_lines | length > 0
+  no_log: true
+
+- name: Label portfolio cluster secret for ApplicationSet generator
+  shell: |
+    SECRET_NAME=$(kubectl -n argocd get secrets \
+      -l argocd.argoproj.io/secret-type=cluster \
+      -o jsonpath='{.items[?(@.data.name=="YW5kdXN5c3RlbXMtcG9ydGZvbGlv")].metadata.name}')
+    if [ -z "$SECRET_NAME" ]; then
+      echo "ERROR: Could not find portfolio cluster secret"
+      exit 1
+    fi
+    kubectl -n argocd label secret "$SECRET_NAME" \
+      type=andusystems-portfolio \
+      region=us \
+      --overwrite
+  environment:
+    KUBECONFIG: "{{ repo_root }}/kubeconfig"
+  when:
+    - login_result.rc == 0
+    - portfolio_cluster_add_result is defined
+
 - name: Verify cluster was added
   shell: argocd cluster list
   register: cluster_list

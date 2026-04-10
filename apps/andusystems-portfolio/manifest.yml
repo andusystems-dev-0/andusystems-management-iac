@@ -1,0 +1,50 @@
+---
+#
+# Portfolio static-site app (plain manifests from Forgejo)
+#
+# Mirrors the slimerio-app pattern: a single ArgoCD Application that watches
+# the apps/portfolio path of andusystems-portfolio on Forgejo and syncs the
+# resulting Namespace + ServiceAccount + Deployment + Service + IngressRoute
+# + Certificate + NetworkPolicies into the portfolio destination cluster.
+#
+# Image bumps land in apps/portfolio/manifest.yml via the build-and-push
+# workflow on the Portfolio app repo (.github/workflows/build-and-push.yml).
+# selfHeal=true + automated sync means a fresh commit on main rolls the
+# Deployment automatically — no kubectl from the runner.
+#
+# PREREQS that this Application assumes are already in place on the
+# destination cluster (handled by the andusystems-portfolio Ansible role,
+# NOT by ArgoCD):
+#   - portfolio namespace exists
+#   - nexus-registry-credentials Secret exists in the portfolio namespace
+#     (templated from vault by apps/portfolio/registry-secret.yml)
+#   - traefik is installed and running with `web` + `websecure` entrypoints
+#   - cert-manager is installed with the `letsencrypt` ClusterIssuer
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+    targetRevision: HEAD
+    path: apps/portfolio
+    directory:
+      recurse: false
+      # Skip the bootstrap registry-secret.yml — it's a Jinja2 template
+      # rendered by Ansible against vault vars and is NOT valid plain YAML
+      # without that templating. Ansible applies it directly before ArgoCD
+      # ever sees this Application; ArgoCD only owns manifest.yml.
+      exclude: registry-secret.yml
+  destination:
+    name: andusystems-portfolio
+    namespace: portfolio
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

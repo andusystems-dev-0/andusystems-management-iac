@@ -38,7 +38,7 @@
     oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
     --namespace arc-runners
     --values {{ repo_root }}/apps/github-runner/values-runner.yml
-    --set githubConfigUrl=https://github.com/{{ github_runner_org }}
+    --set githubConfigUrl=https://github.com/{{ github_runner_repo }}
     --wait
     --timeout 300s
   environment:
