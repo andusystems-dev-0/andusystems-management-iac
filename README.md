@@ -29,7 +29,7 @@ The management cluster acts as the **hub** — running the primary ArgoCD instan
 │  │  │  Spoke Clusters (via ArgoCD)          │    │  │
 │  │  │  • Monitoring  • Storage              │    │  │
 │  │  │  • Networking  • FleetDock            │    │  │
-│  │  │  • Slimerio                           │    │  │
+│  │  │  • Slimerio    • Portfolio            │    │  │
 │  │  └───────────────────────────────────────┘    │  │
 │  │                                               │  │
 │  │  ┌──────────┐ ┌────────┐ ┌───────────────┐   │  │
@@ -91,7 +91,7 @@ The `deploy.yml` playbook executes the full stack in order:
 8. **Cert-Manager** — TLS via Let's Encrypt (DNS-01 with Cloudflare)
 9. **Keycloak** — SSO/OIDC provider
 10. **Vault** — Secret management
-11. **Spoke Clusters** — Networking, Storage, Monitoring, FleetDock apps
+11. **Spoke Clusters** — Networking, Storage, Monitoring, Portfolio, and additional app clusters
 
 ### Configuration
 
@@ -127,7 +127,6 @@ Key configuration variables:
 │       └── layer-2-helmapps/         # MetalLB + ArgoCD Helm releases
 ├── ansible/
 │   ├── ansible.cfg                   # Ansible settings
-│   ├── requirements.yml              # Ansible Galaxy collections
 │   ├── configurations/
 │   │   ├── deploy.yml                # Full deployment playbook
 │   │   ├── apps.yml                  # Application-only deployment
@@ -156,7 +155,8 @@ Key configuration variables:
 │   ├── andusystems-storage/          # Storage cluster apps
 │   ├── andusystems-networking/       # Networking cluster apps
 │   ├── andusystems-fleetdock/        # FleetDock cluster apps
-│   └── andusystems-slimerio/         # Slimerio cluster apps
+│   ├── andusystems-slimerio/         # Slimerio cluster apps
+│   └── andusystems-portfolio/        # Portfolio cluster apps
 ├── scripts/                          # Deployment helper scripts
 └── docs/                             # Project documentation
 ```
@@ -172,6 +172,7 @@ The management cluster's ArgoCD instance deploys applications to these downstrea
 | Networking    | Network services                       | PiHole (DNS), Longhorn, Prometheus, Loki               |
 | FleetDock     | Game server management                 | Longhorn, Prometheus, Loki, Tempo                      |
 | Slimerio      | Application cluster                    | Slimerio app, Longhorn, Prometheus, Loki               |
+| Portfolio     | Portfolio application cluster          | Portfolio app, Longhorn, Prometheus, Loki               |
 
 Each spoke cluster also receives its own Traefik ingress controller, cert-manager instance, Pangolin-Newt VPN connector, and full observability stack (Prometheus, Loki, Tempo, Alloy).
 

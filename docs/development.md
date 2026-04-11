@@ -176,7 +176,7 @@ VMs → Kubernetes → ArgoCD + MetalLB → Longhorn → Forgejo
   → Traefik → Pangolin-Newt → Cert-Manager → Keycloak → Vault
   → Observability (Prometheus, Loki, Tempo, Alloy)
   → GitHub Runner (ARC)
-  → Spoke Cluster Apps (Networking, Storage, Monitoring, FleetDock, Slimerio)
+  → Spoke Cluster Apps (Networking, Storage, Monitoring, Portfolio, Slimerio)
 ```
 
 Critical ordering constraints:
@@ -184,6 +184,7 @@ Critical ordering constraints:
 - **Forgejo before Traefik**: ArgoCD applications reference Forgejo for Helm values
 - **MetalLB before any LoadBalancer service**: Services cannot get external IPs without MetalLB
 - **Cert-Manager after Traefik**: IngressRoutes need TLS certificates
+- **Cloud-init readiness**: Kubernetes bootstrap waits for cloud-init to complete on newly provisioned VMs
 
 ## Playbook Structure
 
@@ -206,7 +207,6 @@ The master playbook that runs the full deployment. It imports roles in dependenc
 | 11    | `andusystems-networking`   | Networking cluster apps                  |
 | 12    | `andusystems-storage`      | Storage cluster apps                     |
 | 13    | `andusystems-monitoring`   | Monitoring cluster apps                  |
-| 14    | `andusystems-fleetdock`    | FleetDock cluster apps                   |
 
 ### apps.yml
 
@@ -218,6 +218,7 @@ Application-only deployment that skips VM and Kubernetes provisioning. Useful fo
 - `alloy` — Unified observability collector
 - `github-runner` — GitHub Actions Runner Controller
 - `andusystems-slimerio` — Slimerio cluster registration
+- `andusystems-portfolio` — Portfolio cluster registration
 
 ### argocd.yml
 
@@ -226,10 +227,11 @@ Minimal playbook focused on ArgoCD bootstrap:
 1. Terraform apply (Layer 2) to install MetalLB and ArgoCD Helm charts
 2. Apply MetalLB manifest (IPAddressPool + L2Advertisement)
 3. Wait for ArgoCD server pod and service readiness
-4. Patch ArgoCD service to LoadBalancer type for initial access
-5. Login with admin credentials
-6. Register Git repositories (Forgejo, Slimerio)
-7. Register spoke clusters via kubeconfig
+4. Patch ArgoCD service to LoadBalancer type with pinned MetalLB IP
+5. Login with admin credentials (automatic fallback between initial secret and vault password)
+6. Register Git repositories from the internal Forgejo instance
+7. Register spoke clusters via kubeconfig (with validation and idempotent checks)
+8. Label cluster secrets for ApplicationSet generation
 
 ## Environment Variables
 
@@ -287,11 +289,11 @@ To register a new spoke cluster with the management ArgoCD:
 
 1. **Obtain the kubeconfig** for the new cluster and store it as an Ansible Vault variable.
 
-2. **Register the cluster** in the ArgoCD role (`ansible/configurations/roles/argocd/tasks/install.yml`) by adding a cluster registration command.
+2. **Register the cluster** in the ArgoCD role (`ansible/configurations/roles/argocd/tasks/install.yml`) by adding cluster registration tasks. The role validates kubeconfig existence, checks for prior registration, and labels the cluster secret for ApplicationSet targeting.
 
 3. **Create an app manifest directory** under `apps/andusystems-<cluster-name>/` containing the ArgoCD Application manifests for each service to deploy.
 
-4. **Create an Ansible role** under `ansible/configurations/roles/andusystems-<cluster-name>/` with tasks to apply the manifests.
+4. **Create an Ansible role** under `ansible/configurations/roles/andusystems-<cluster-name>/` with tasks to apply the manifests and push the spoke cluster's repository content to Forgejo.
 
 5. **Add to deployment playbooks** — Import the new role in `deploy.yml` and/or `apps.yml`.
 
@@ -312,16 +314,16 @@ Traefik is configured with two Kubernetes providers:
 
 ### Entrypoints (Ports)
 
-| Entrypoint  | Container Port | Exposed Port | Protocol | Notes                              |
-|-------------|----------------|--------------|----------|------------------------------------|
-| `web`       | 8000           | 80           | TCP      | HTTP traffic                       |
-| `websecure` | 8443           | 443          | TCP      | HTTPS traffic                      |
+| Entrypoint  | Protocol | Notes                              |
+|-------------|----------|------------------------------------|
+| `web`       | TCP      | HTTP traffic                       |
+| `websecure` | TCP      | HTTPS traffic                      |
 
 HTTP-to-HTTPS redirection is commented out until TLS is fully configured. To enable it, uncomment the `redirections` block under the `web` entrypoint.
 
 ### RBAC
 
-RBAC is enabled cluster-wide (`namespaced: false`) to support cross-namespace routing. An additional `ClusterRole` and `ClusterRoleBinding` (`traefik-configmap-access`) are created via `extraObjects` to grant the `management-traefik` service account read access to ConfigMaps (`get`, `list`, `watch`). This resolves a "configmaps forbidden" error that occurs with the default Helm RBAC.
+RBAC is enabled cluster-wide (`namespaced: false`) to support cross-namespace routing. An additional `ClusterRole` and `ClusterRoleBinding` are created via `extraObjects` to grant the Traefik service account read access to ConfigMaps (`get`, `list`, `watch`). This resolves a "configmaps forbidden" error that occurs with the default Helm RBAC.
 
 ### Additional Arguments
 
@@ -396,4 +398,19 @@ If ArgoCD cannot sync applications, verify Forgejo is running and accessible fro
 ```bash
 kubectl -n forgejo get pods
 kubectl -n forgejo get svc
+```
+
+### Spoke Cluster Registration
+
+If a spoke cluster is not appearing in ArgoCD, verify:
+
+```bash
+# Check registered clusters
+argocd cluster list
+
+# Verify kubeconfig validity
+kubectl --kubeconfig=<path-to-kubeconfig> get nodes
+
+# Check cluster secret labels in ArgoCD namespace
+kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=cluster
 ```
