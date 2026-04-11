@@ -34,9 +34,9 @@ All infrastructure is hosted on Proxmox bare-metal servers connected through a m
 │  │  │  ┌────────────┐ ┌─────────┐ ┌────────────┐ ┌────────┐  │   │  │
 │  │  │  │ Monitoring │ │ Storage │ │ Networking │ │FleetDock│  │   │  │
 │  │  │  └────────────┘ └─────────┘ └────────────┘ └────────┘  │   │  │
-│  │  │  ┌────────────┐ ┌───────────┐                           │   │  │
-│  │  │  │  Slimerio  │ │ Portfolio │                           │   │  │
-│  │  │  └────────────┘ └───────────┘                           │   │  │
+│  │  │  ┌────────────┐                                         │   │  │
+│  │  │  │  Slimerio  │                                         │   │  │
+│  │  │  └────────────┘                                         │   │  │
 │  │  └─────────────────────────────────────────────────────────┘   │  │
 │  │                                                                 │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │  │
@@ -70,7 +70,6 @@ Terraform provisions virtual machines on Proxmox using the `bpg/proxmox` provide
 - All VMs use Ubuntu 24.04 LTS cloud images with cloud-init for initial configuration
 - Static IPs assigned per VM with VLAN tagging on a shared bridge interface
 - SSH access configured via cloud-init with a dedicated service account
-- Cloud-init readiness is verified before proceeding with Kubernetes bootstrap
 
 Terraform providers used: `bpg/proxmox ~> 0.93`, `hashicorp/kubernetes ~> 2.35`, `hashicorp/helm ~> 2.17`.
 
@@ -80,8 +79,6 @@ Terraform installs the foundational cluster services before Ansible takes over:
 
 - **MetalLB**: L2 load balancer providing external IPs for services (with CRD pre-installation)
 - **ArgoCD**: GitOps controller deployed via Helm with initial bootstrap configuration (depends on MetalLB)
-
-ArgoCD's LoadBalancer service IP is pinned via MetalLB annotations to ensure a stable endpoint across redeployments.
 
 ### Layer 3: Ansible Application Deployment
 
@@ -103,12 +100,11 @@ Developer ──push──► Forgejo (Git) ──webhook/poll──► ArgoCD
 
 ArgoCD applications reference Forgejo as a `$values` source. The internal Forgejo service URL is used for Helm value retrieval, ensuring all clusters pull configuration from a single source of truth.
 
-Each ArgoCD Application manifest follows a consistent multi-source pattern:
-- **Source 1** (`repoURL`) points to the upstream Helm chart repository with a pinned chart version
-- **Source 2** (`$values`) references the Forgejo-hosted management repository for per-environment value overrides
-- `destination` specifies the target cluster (either `in-cluster` for management or a registered spoke cluster name) and namespace
-
-The Forgejo role also pushes spoke cluster repository content to the internal Git service, ensuring ArgoCD can resolve `$values` references for all clusters without depending on external Git providers.
+Each ArgoCD Application manifest follows a consistent pattern:
+- `repoURL` points to the upstream Helm chart repository
+- `$values` references the Forgejo-hosted management repository for per-environment overrides
+- `targetRevision` pins the Helm chart version
+- `destination` specifies the target cluster and namespace
 
 ### Observability Flow
 
@@ -205,8 +201,6 @@ Each cluster has its own MetalLB instance providing LoadBalancer IPs within its 
 
 A single ArgoCD instance on the management cluster controls all deployments. Spoke clusters are registered via kubeconfig and labeled for ApplicationSet targeting. This centralizes GitOps governance while allowing per-cluster customization through Helm values.
 
-Cluster registration includes validation of kubeconfig files and idempotent checks to avoid duplicate registrations. Cluster secrets are labeled with type and region metadata to support ApplicationSet generators for dynamic targeting.
-
 **Trade-off**: Single point of failure for deployments, but simplifies secret management and provides a unified deployment view.
 
 ### Forgejo as Values Source
@@ -216,8 +210,6 @@ Forgejo (self-hosted Git) serves as the `$values` source for all ArgoCD applicat
 **Dependency**: Longhorn must be deployed before Forgejo (for persistent storage), and Forgejo must be deployed before Traefik and other services (as their ArgoCD applications reference Forgejo for values).
 
 Forgejo runs with SQLite3 for its database and in-memory session/cache stores, keeping the footprint minimal while relying on Longhorn-backed persistent volumes for Git repository data.
-
-The Forgejo Ansible role automates user and organization creation, repository initialization, and pushing of spoke cluster repository content to ensure all ArgoCD `$values` references are resolvable from day one. Additional non-cluster repositories (e.g., application-specific repos) are also pushed to Forgejo for ArgoCD integration.
 
 ### Layered Terraform
 
@@ -238,7 +230,6 @@ Loki and Tempo use MinIO (on the storage cluster) as their S3-compatible object 
 
 - **Longhorn**: Default StorageClass with 3-way replication for pod persistent volumes, 200% over-provisioning allowed, deployed to every cluster
 - **MinIO**: S3-compatible object storage on the storage cluster, used as backend for Loki (log chunks) and Tempo (trace data)
-- **Nexus**: Artifact repository on the storage cluster for container image and package management
 
 ### Authentication
 
@@ -257,11 +248,7 @@ Each ArgoCD Application manifest uses a multi-source pattern:
 
 This allows Helm chart versions to be managed independently from value overrides, and ensures all configuration lives in Git.
 
-Sync policies are set to automated with `prune` and `selfHeal` enabled, allowing ArgoCD to automatically reconcile drift. Conservative sync options (e.g., `ServerSideApply`, disabled pruning) are used for CRD-heavy applications like cert-manager.
-
-### ArgoCD LoadBalancer IP Pinning
-
-ArgoCD's service is patched with MetalLB annotations to pin a stable LoadBalancer IP. This prevents IP drift across redeployments and ensures consistent DNS resolution and CLI access.
+Sync policies are set to automated with `prune` and `selfHeal` enabled, allowing ArgoCD to automatically reconcile drift.
 
 ## Spoke Cluster Architecture
 
@@ -283,11 +270,10 @@ Additionally, each cluster runs its specialized workloads:
 | Cluster    | Specialized Applications                        |
 |------------|--------------------------------------------------|
 | Monitoring | Grafana (dashboards), Homepage (status page)     |
-| Storage    | MinIO (S3-compatible object storage), Nexus      |
+| Storage    | MinIO (S3-compatible object storage)             |
 | Networking | PiHole (DNS/ad-blocking)                         |
 | FleetDock  | Game server management platform                  |
 | Slimerio   | Application workloads (managed via separate repo)|
-| Portfolio  | Portfolio application (managed via separate repo)|
 
 ## Invariants
 
@@ -298,7 +284,6 @@ Additionally, each cluster runs its specialized workloads:
 - **VLAN isolation**: Each cluster operates on a dedicated VLAN. Cross-cluster communication relies on the router for inter-VLAN routing.
 - **ArgoCD runs insecure**: The ArgoCD server runs in insecure (plaintext) mode internally; TLS is terminated at the Traefik ingress layer.
 - **Longhorn storage dependency**: Services requiring persistent volumes (Forgejo, Prometheus, Loki, Vault) depend on Longhorn being deployed and healthy.
-- **Kubeconfig validity**: Spoke cluster registration requires valid kubeconfig files. The ArgoCD role validates kubeconfig existence before attempting cluster registration.
 
 ## Kubernetes Details
 

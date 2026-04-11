@@ -7,40 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- ArgoCD cluster registration for monitoring and networking clusters with kubeconfig validation, idempotent registration checks, and cluster secret labeling for ApplicationSet generation.
-- Tasks to push extra non-cluster repositories to Forgejo for ArgoCD integration.
-- Cloud-init readiness wait in Kubernetes bootstrap to ensure VMs are fully initialized before proceeding.
-- Portfolio cluster integration with Ansible playbooks and ArgoCD registration.
-- Nexus repository application manifest for artifact management on the storage cluster.
-- Storage cluster registration and management tasks in ArgoCD playbook.
-- Tasks to push spoke cluster repositories to Forgejo, ensuring they are populated with content for ArgoCD integration.
-- ArgoCD LoadBalancer IP pinning via MetalLB annotations to prevent IP drift across redeployments.
-
-### Changed
-- Temporarily disabled FleetDock cluster deployment in `deploy.yml` pending further configuration.
-- Conditional execution of Kubernetes installation tasks for controller nodes only.
-- Removed unnecessary task for ensuring Terraform provider binaries are executable in VMs role.
-- Refactored ArgoCD repository configuration to use Forgejo URL exclusively, removing duplicate GitHub SSH URLs to prevent drift.
-- Updated Pangolin-Newt and Slimerio manifests to point to the internal Forgejo repository.
-- Reordered Forgejo playbook import in `apps.yml` for deployment consistency.
-- GitHub Actions Runner Controller: dropped `--insecure-registry` flag from runner configuration.
-
-## [2026-04-07]
-
-### Added
 - Documented Traefik configuration in development guide (providers, entrypoints, RBAC, additional arguments, dashboard).
-- Generated and updated project documentation (README, architecture, development guide, changelog).
-- Comments explaining the purpose of each task in the Forgejo Ansible role.
-
-### Changed
-- Confirmed ServerSideApply is enabled for cert-manager applications to prevent field ownership conflicts.
-
-## [2026-04-05] - GitHub Runner & Multi-Cluster Enablement
-
-### Added
 - Bumped Alloy resource limits to prevent OOMKilled on management cluster.
 - Enabled additional Ansible playbooks for Andusystems clusters in `apps.yml`.
-- Added policy rule for GitHub Actions in ArgoCD cleanup tasks to allow project access.
+- Added policy rule for GitHub Actions in ArgoCD cleanup tasks.
+- Generated and updated project documentation (README, architecture, development guide, changelog).
 
 ### Changed
 - Refactored GitHub Runner installation to use `helm` command directly instead of Ansible Helm module.
