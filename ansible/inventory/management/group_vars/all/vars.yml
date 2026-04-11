@@ -100,6 +100,7 @@ slimerio_traefik_server_ip: "{{ vault_slimerio_traefik_server_ip }}"
 # Portfolio cluster
 portfolio_repo_root: "{{ vault_portfolio_repo_root }}"
 portfolio_kubeconfig: "{{ vault_portfolio_kubeconfig }}"
+portfolio_traefik_server_ip: "{{ vault_portfolio_traefik_server_ip }}"
 
 # GitHub Actions Runner (repo-scoped — see apps/github-runner/values-runner.yml)
 github_runner_pat: "{{ vault_github_runner_pat }}"

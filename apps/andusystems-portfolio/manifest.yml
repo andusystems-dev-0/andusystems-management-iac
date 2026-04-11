@@ -1,11 +1,268 @@
 ---
 #
+# Traefik application
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-traefik
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.traefik.io/traefik
+      chart: traefik
+      targetRevision: 32.1.1
+      helm:
+        valueFiles:
+          - $values/apps/traefik/values.yml
+        values: |
+          service:
+            type: LoadBalancer
+            additionalServices: {}
+            annotations:
+              metallb.io/address-pool: default
+              metallb.io/loadBalancerIPs: "{{ portfolio_traefik_server_ip }}"
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-portfolio
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Cert-Manager
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-cert-manager
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      targetRevision: v1.14.4
+      helm:
+        valueFiles:
+          - $values/apps/cert-manager/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-portfolio
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+---
+#
+# Newt Connector
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-newt
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.fossorial.io
+      chart: newt
+      targetRevision: 1.2.0
+      helm:
+        valueFiles:
+          - $values/apps/pangolin-newt/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-portfolio
+    namespace: newt
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Longhorn Storage
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-longhorn
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      targetRevision: 1.7.3
+      helm:
+        valueFiles:
+          - $values/apps/longhorn/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-portfolio
+    namespace: longhorn-system
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /spec/preserveUnknownFields
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+---
+#
+# kube-prometheus-stack
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 69.3.2
+      helm:
+        valueFiles:
+          - $values/apps/kube-prometheus-stack/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-portfolio
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+#
+# Loki
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-loki
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 6.25.0
+      helm:
+        valueFiles:
+          - $values/apps/loki/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-portfolio
+    namespace: loki
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Tempo
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-tempo
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: 1.14.0
+      helm:
+        valueFiles:
+          - $values/apps/tempo/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-portfolio
+    namespace: tempo
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
+# Alloy
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-alloy
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: k8s-monitoring
+      targetRevision: 2.0.6
+      helm:
+        valueFiles:
+          - $values/apps/alloy/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-portfolio
+    namespace: alloy
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
 # Portfolio static-site app (plain manifests from Forgejo)
 #
-# Mirrors the slimerio-app pattern: a single ArgoCD Application that watches
-# the apps/portfolio path of andusystems-portfolio on Forgejo and syncs the
-# resulting Namespace + ServiceAccount + Deployment + Service + IngressRoute
-# + Certificate + NetworkPolicies into the portfolio destination cluster.
+# A single ArgoCD Application that watches the apps/portfolio path of
+# andusystems-portfolio on Forgejo and syncs the resulting Namespace +
+# ServiceAccount + Deployment + Service + IngressRoute + Certificate +
+# NetworkPolicies into the portfolio destination cluster.
 #
 # Image bumps land in apps/portfolio/manifest.yml via the build-and-push
 # workflow on the Portfolio app repo (.github/workflows/build-and-push.yml).
