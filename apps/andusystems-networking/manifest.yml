@@ -259,6 +259,32 @@ spec:
       - CreateNamespace=true
 ---
 #
+# Cluster Status — lightweight /healthz endpoint for portfolio dashboard
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: networking-cluster-status
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-networking.git
+    targetRevision: HEAD
+    path: apps/cluster-status
+    directory:
+      recurse: false
+  destination:
+    name: andusystems-networking
+    namespace: cluster-status
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
 # Pihole
 #
 apiVersion: argoproj.io/v1alpha1

@@ -1,0 +1,11 @@
+- name: Install Cluster Status
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: cluster-status
+      tags:
+        - cluster-status
+        - apps
+        - install

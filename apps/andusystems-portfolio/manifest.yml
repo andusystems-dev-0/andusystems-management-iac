@@ -257,6 +257,32 @@ spec:
       - CreateNamespace=true
 ---
 #
+# Cluster Status — lightweight /healthz endpoint for portfolio dashboard
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-cluster-status
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+    targetRevision: HEAD
+    path: apps/cluster-status
+    directory:
+      recurse: false
+  destination:
+    name: andusystems-portfolio
+    namespace: cluster-status
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+#
 # Portfolio static-site app (plain manifests from Forgejo)
 #
 # A single ArgoCD Application that watches the apps/portfolio path of

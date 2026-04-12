@@ -1,0 +1,32 @@
+---
+#
+# Cluster Status — lightweight /healthz endpoint for portfolio dashboard
+#
+# ArgoCD Application that watches apps/cluster-status/ in this repo and
+# syncs the K8s resources (ConfigMap, Deployment, Service, IngressRoute,
+# Certificate) into the management cluster. The argocd-app.yml file itself
+# is excluded so ArgoCD doesn't try to apply it as a K8s resource.
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: management-cluster-status
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-management.git
+    targetRevision: HEAD
+    path: apps/cluster-status
+    directory:
+      recurse: false
+      exclude: argocd-app.yml
+  destination:
+    name: in-cluster
+    namespace: cluster-status
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
