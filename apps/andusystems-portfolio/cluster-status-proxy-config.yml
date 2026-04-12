@@ -1,0 +1,60 @@
+---
+# Jinja2 template — rendered by the andusystems-portfolio Ansible role and
+# applied to the portfolio cluster BEFORE ArgoCD syncs the cluster-status
+# Deployment that references this ConfigMap.
+#
+# Traefik LB IPs come from management vault vars. The proxy connects over
+# HTTP (port 80 / web entrypoint) to each remote cluster's Traefik and
+# sets the Host header so the IngressRoute matches.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-status-proxy-config
+  namespace: cluster-status
+data:
+  default.conf: |
+    server {
+      listen 8080;
+
+      # Portfolio cluster — if this proxy pod is running, the cluster is up
+      location = /api/status/portfolio {
+        add_header Content-Type text/plain always;
+        return 200 'ok';
+      }
+
+      # Management cluster (VLAN 10)
+      location = /api/status/management {
+        proxy_pass http://{{ management_traefik_server_ip }}/healthz;
+        proxy_set_header Host status-management.andusystems.com;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 5s;
+      }
+
+      # Networking cluster (VLAN 30)
+      location = /api/status/networking {
+        proxy_pass http://{{ networking_traefik_server_ip }}/healthz;
+        proxy_set_header Host status-networking.andusystems.com;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 5s;
+      }
+
+      # Storage cluster (VLAN 40)
+      location = /api/status/storage {
+        proxy_pass http://{{ storage_traefik_server_ip }}/healthz;
+        proxy_set_header Host status-storage.andusystems.com;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 5s;
+      }
+
+      # Monitoring cluster (VLAN 50)
+      location = /api/status/monitoring {
+        proxy_pass http://{{ monitoring_traefik_server_ip }}/healthz;
+        proxy_set_header Host status-monitoring.andusystems.com;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 5s;
+      }
+
+      location / {
+        return 404;
+      }
+    }

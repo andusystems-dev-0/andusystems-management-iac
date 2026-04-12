@@ -1,3 +1,24 @@
+# Bootstrap the cluster-status proxy ConfigMap on the portfolio cluster
+# BEFORE applying the ArgoCD Applications. The cluster-status Deployment
+# references this ConfigMap — same pattern as nexus-registry-credentials.
+- name: install | Create cluster-status namespace on portfolio cluster
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: cluster-status
+  environment:
+    KUBECONFIG: "{{ portfolio_kubeconfig }}"
+
+- name: install | Apply cluster-status proxy config to portfolio cluster
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', repo_root + '/apps/andusystems-portfolio/cluster-status-proxy-config.yml') | from_yaml_all | list }}"
+  environment:
+    KUBECONFIG: "{{ portfolio_kubeconfig }}"
+
 - name: install | Install Portfolio Cluster Apps
   kubernetes.core.k8s:
     state: present
