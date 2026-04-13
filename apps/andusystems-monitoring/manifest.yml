@@ -79,7 +79,7 @@ spec:
   sources:
     - repoURL: https://charts.fossorial.io
       chart: newt
-      targetRevision: 1.2.0
+      targetRevision: 1.3.0
       helm:
         valueFiles:
           - $values/apps/pangolin-newt/values.yml
