@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Portfolio cluster deployment with ArgoCD integration and cluster-status application.
+- Cluster status application to Portfolio cluster.
+- ArgoCD cluster registration tasks for monitoring and networking clusters with kubeconfig validation and secret labeling for ApplicationSet generation.
+- Storage cluster registration and management tasks in Ansible playbook.
+- Tasks to push spoke cluster repositories to Forgejo for ArgoCD integration.
 - Documented Traefik configuration in development guide (providers, entrypoints, RBAC, additional arguments, dashboard).
 - Bumped Alloy resource limits to prevent OOMKilled on management cluster.
 - Enabled additional Ansible playbooks for Andusystems clusters in `apps.yml`.
@@ -14,12 +19,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Generated and updated project documentation (README, architecture, development guide, changelog).
 
 ### Changed
+- Updated Newt Helm chart from 1.2.0 to 1.3.0 (Newt 1.11.0) for Pangolin 1.17.0 server compatibility.
+- Reverse proxy health endpoints instead of direct exposure.
+- Refactored ArgoCD repository configuration to use Forgejo URL; removed duplicate GitHub SSH URL for slimerio.
+- Reordered Forgejo playbook import in `apps.yml` for consistent deployment sequencing.
+- Temporarily disabled FleetDock cluster deployment in `deploy.yml` pending reconfiguration.
 - Refactored GitHub Runner installation to use `helm` command directly instead of Ansible Helm module.
 - Improved ARC controller and runner scale set installation with updated command syntax and Helm output registration.
 - Updated ARC controller label selector for deployment detection.
 - Integrated Forgejo into deployment playbooks and streamlined ArgoCD configurations.
 - Updated ArgoCD login and repository registration to use public access URLs.
 - Enhanced Forgejo user management and repository creation automation.
+
+### Fixed
+- Pinned ArgoCD LoadBalancer IP via MetalLB annotation; removed `--insecure-registry` from runner configuration.
 
 ## [2026-04-04]
 
@@ -117,7 +130,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Values files for deployment configuration.
 
 ### Changed
-- Updated `.gitignore` to exclude [AI_ASSISTANT] configuration files.
+- Updated `.gitignore` to exclude Claude configuration files.
 
 ## [2026-03-08] - Certificate & Authentication
 

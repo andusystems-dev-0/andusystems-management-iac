@@ -1,203 +1,176 @@
 # andusystems-management
 
-Infrastructure-as-Code for the management Kubernetes cluster, serving as the central control plane for a multi-cluster homelab environment running on Proxmox.
+> Infrastructure-as-code hub for the andusystems homelab — provisions and governs a management Kubernetes cluster and all downstream spoke clusters via ArgoCD.
 
-## Overview
+## Purpose
 
-This repository provisions and configures a Kubernetes cluster dedicated to management and internal services. It uses a layered approach:
+This repository defines the complete lifecycle of the management Kubernetes cluster: VM provisioning on Proxmox with Terraform, cluster bootstrap with Ansible, and GitOps-driven application delivery via ArgoCD. The management cluster acts as the hub in a hub-spoke model, orchestrating deployments to all other clusters in the homelab (monitoring, storage, networking, portfolio, and application clusters). It also runs shared internal services including a self-hosted Git forge (Forgejo), SSO provider (Keycloak), secrets manager (Vault), and a full LGTM observability stack.
 
-1. **Terraform** provisions virtual machines on Proxmox with cloud-init, static IPs, and VLAN tagging.
-2. **Ansible** bootstraps Kubernetes, installs core services, and deploys applications via ArgoCD.
-3. **ArgoCD** manages Helm-based application manifests using a hub-spoke model to govern multiple downstream clusters.
+## At a glance
 
-The management cluster acts as the **hub** — running the primary ArgoCD instance that orchestrates deployments across all other clusters (monitoring, storage, networking, and application clusters).
+| Field | Value |
+|---|---|
+| Type | IaC cluster |
+| Network | Dedicated management VLAN on a /24 subnet |
+| Role | hub |
+| Primary stack | Terraform + Ansible + ArgoCD + Helm |
+| Deployed by | self-bootstrap |
+| Status | production |
+
+## Components
+
+| Component | Purpose | Namespace |
+|---|---|---|
+| MetalLB | L2 load balancer — provides external IPs for services | `metallb` |
+| ArgoCD | GitOps hub — manages all cluster and spoke deployments | `argocd` |
+| Traefik | Ingress controller using IngressRoute CRDs | `traefik` |
+| cert-manager | Automated TLS via Let's Encrypt DNS-01 (Cloudflare) | `cert-manager` |
+| Longhorn | Distributed block storage; default StorageClass | `longhorn-system` |
+| Forgejo | Self-hosted Git forge and Helm values source for ArgoCD | `forgejo` |
+| Keycloak | SSO/OIDC provider (Grafana SSO integration) | `keycloak` |
+| HashiCorp Vault | Secrets management with file-based storage | `vault` |
+| kube-prometheus-stack | Cluster metrics, Alertmanager, and exporters | `prometheus` |
+| Loki | Log aggregation with MinIO S3 backend | `loki` |
+| Tempo | Distributed tracing with MinIO S3 backend | `tempo` |
+| Alloy (k8s-monitoring) | Unified observability collector | `alloy` |
+| Pangolin-Newt | VPN connector for administrative access | `newt` |
+| GitHub ARC | Self-hosted GitHub Actions runner controller | `arc-systems` / `arc-runners` |
+| cluster-status | Cluster health status application | `cluster-status` |
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Proxmox Hosts                     │
-│  ┌───────────────────────────────────────────────┐  │
-│  │      Management Cluster (Dedicated VLAN)      │  │
-│  │                                               │  │
-│  │  ┌─────────┐  ┌────────┐  ┌──────────────┐   │  │
-│  │  │ ArgoCD  │  │Traefik │  │ Cert-Manager │   │  │
-│  │  │  (Hub)  │  │(Ingress)│  │  (TLS/DNS)  │   │  │
-│  │  └────┬────┘  └────────┘  └──────────────┘   │  │
-│  │       │                                       │  │
-│  │  ┌────┴──────────────────────────────────┐    │  │
-│  │  │  Spoke Clusters (via ArgoCD)          │    │  │
-│  │  │  • Monitoring  • Storage              │    │  │
-│  │  │  • Networking  • FleetDock            │    │  │
-│  │  │  • Slimerio                           │    │  │
-│  │  └───────────────────────────────────────┘    │  │
-│  │                                               │  │
-│  │  ┌──────────┐ ┌────────┐ ┌───────────────┐   │  │
-│  │  │ Forgejo  │ │Keycloak│ │  Vault        │   │  │
-│  │  │  (Git)   │ │ (SSO)  │ │  (Secrets)    │   │  │
-│  │  └──────────┘ └────────┘ └───────────────┘   │  │
-│  │                                               │  │
-│  │  ┌──────────┐ ┌────────┐ ┌───────────────┐   │  │
-│  │  │Prometheus│ │  Loki  │ │    Tempo      │   │  │
-│  │  │(Metrics) │ │ (Logs) │ │  (Traces)     │   │  │
-│  │  └──────────┘ └────────┘ └───────────────┘   │  │
-│  └───────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────┘
+Proxmox Hypervisors
+└── Management Cluster (dedicated /24 VLAN)
+    ├── Ingress layer
+    │   MetalLB (L2) ──► Traefik IngressRoutes ──► TLS termination (cert-manager)
+    │
+    ├── GitOps (ArgoCD hub)
+    │   └── manages spoke clusters ──────────────────────────────────────────┐
+    │                                                                         │
+    │   Spoke Clusters (each on its own VLAN)                                │
+    │   ├── Monitoring   — Grafana, Prometheus, Loki, Tempo, Alloy           │◄──┘
+    │   ├── Storage      — MinIO (S3), Longhorn
+    │   ├── Networking   — PiHole DNS
+    │   ├── Portfolio    — web application cluster
+    │   └── Slimerio     — application workloads
+    │
+    ├── Internal services
+    │   Forgejo (Git) · Keycloak (SSO) · Vault (secrets)
+    │
+    └── Observability stack
+        Prometheus · Loki · Tempo · Alloy (collector)
 ```
 
-For detailed architecture documentation, see [docs/architecture.md](docs/architecture.md).
+The diagram shows the management cluster as the control plane for all homelab infrastructure. Each spoke cluster receives Traefik, cert-manager, Pangolin-Newt, Longhorn, and an Alloy collector that ships metrics, logs, and traces back to the management observability stack. See [docs/architecture.md](docs/architecture.md) for the full component diagram and data flows.
 
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
-| Tool       | Version   | Purpose                        |
-|------------|-----------|--------------------------------|
-| Terraform  | >= 1.5.0  | VM provisioning on Proxmox     |
-| Ansible    | >= 2.15   | Configuration management       |
-| kubectl    | >= 1.31   | Kubernetes CLI                 |
-| Helm       | >= 3.x    | Helm chart management          |
-| ArgoCD CLI | >= 2.12   | ArgoCD management              |
-| Python     | >= 3.10   | Required by Ansible            |
+| Tool | Version | Purpose |
+|---|---|---|
+| Terraform | >= 1.5.0 | VM provisioning on Proxmox |
+| Ansible | >= 2.15 | Configuration management |
+| kubectl | >= 1.31 | Kubernetes CLI |
+| Helm | >= 3.x | Helm chart management |
+| ArgoCD CLI | >= 2.12 | ArgoCD management and cluster registration |
+| Python | >= 3.10 | Required by Ansible |
 
-### Deployment
-
-The full deployment is orchestrated through Ansible playbooks that call Terraform and apply Kubernetes manifests.
+### Deploy / run
 
 ```bash
-# 1. Install required Ansible collections
+# Install required Ansible collections
 ansible-galaxy collection install -r ansible/requirements.yml
 
-# 2. Provision VMs and bootstrap Kubernetes
+# Copy the vault template and fill in secrets, then encrypt
+cp ansible/inventory/management/group_vars/all/vault.example \
+   ansible/inventory/management/group_vars/all/vault.yml
+# edit vault.yml with real values, then:
+ansible-vault encrypt ansible/inventory/management/group_vars/all/vault.yml
+
+# Full deployment: VMs → Kubernetes → ArgoCD → all services
 ansible-playbook -i ansible/inventory/management/hosts.yml \
-  ansible/configurations/deploy.yml \
-  --ask-vault-pass
+  ansible/configurations/deploy.yml --ask-vault-pass
 
-# 3. Deploy applications (after initial cluster setup)
+# Applications only (on an existing cluster, skips VM and K8s provisioning)
 ansible-playbook -i ansible/inventory/management/hosts.yml \
-  ansible/configurations/apps.yml \
-  --ask-vault-pass
+  ansible/configurations/apps.yml --ask-vault-pass
 ```
 
-The `deploy.yml` playbook executes the full stack in order:
+See [docs/development.md](docs/development.md) for Terraform-only, role-targeted, and script-based deployment options.
 
-1. **VMs** — Terraform provisions Proxmox VMs with cloud-init
-2. **Kubernetes** — Bootstraps K8s v1.31 with containerd and Flannel CNI
-3. **ArgoCD** — Installs ArgoCD + MetalLB via Helm, registers spoke clusters
-4. **Longhorn** — Distributed storage (required before Forgejo)
-5. **Forgejo** — Git service (ArgoCD values source for all clusters)
-6. **Traefik** — Ingress controller with IngressRoute CRDs
-7. **Pangolin-Newt** — VPN connectivity
-8. **Cert-Manager** — TLS via Let's Encrypt (DNS-01 with Cloudflare)
-9. **Keycloak** — SSO/OIDC provider
-10. **Vault** — Secret management
-11. **Spoke Clusters** — Networking, Storage, Monitoring, FleetDock apps
+## Configuration
 
-### Configuration
+| Key | Required | Description |
+|---|---|---|
+| `proxmox_endpoint` | Yes | Proxmox API URL |
+| `proxmox_api_token` | Yes | Proxmox authentication token |
+| `control_plane_ip` | Yes | Static IP for the control plane VM |
+| `worker_ips` | Yes | List of static IPs for worker VMs |
+| `network_gateway` | Yes | Default gateway for the management VLAN |
+| `ssh_public_key` | Yes | SSH public key for VM cloud-init |
+| `metallb_ip_range` | Yes | IP range for MetalLB load balancer pool |
+| `argocd_url` | Yes | ArgoCD ingress hostname |
+| `argocd_admin_password` | Yes | ArgoCD admin password |
+| `cloudflare_api_token` | Yes | Cloudflare token for DNS-01 TLS challenges |
+| `forgejo_admin_password` | Yes | Forgejo admin password |
+| `keycloak_admin_user` | Yes | Keycloak admin username |
+| `keycloak_admin_password` | Yes | Keycloak admin password |
+| `vault_url` | Yes | HashiCorp Vault ingress hostname |
+| `minio_root_user` | Yes | MinIO root username (Loki/Tempo S3 backend) |
+| `minio_root_password` | Yes | MinIO root password |
+| `pangolin_endpoint` | Yes | Pangolin VPN server endpoint |
+| `newt_id` / `newt_secret` | Yes | Pangolin-Newt connector credentials |
+| `github_runner_pat` | Optional | GitHub PAT for Actions Runner Controller |
+| `grafana_oidc_client_secret` | Optional | OIDC client secret for Keycloak-Grafana SSO |
 
-All sensitive configuration is managed through Ansible Vault. See the vault example template:
+All secrets are encrypted in `ansible/inventory/management/group_vars/all/vault.yml` using Ansible Vault. Copy `vault.example` to see required keys. Never commit unencrypted secrets.
 
-```
-ansible/inventory/management/group_vars/all/vault.example
-```
-
-Key configuration variables:
-
-| Variable Category      | Description                                          |
-|------------------------|------------------------------------------------------|
-| `ssh_*`                | SSH user, key paths for VM access                    |
-| `control_plane_ip`     | Static IP for the control plane VM                   |
-| `worker_ips`           | Static IPs for worker VMs                            |
-| `kubernetes_version`   | Kubernetes version (currently 1.31)                  |
-| `pod_network_cidr`     | Pod network CIDR for Flannel CNI                     |
-| `metallb_ip_range`     | IP range for MetalLB load balancer pool              |
-| `argocd_*`             | ArgoCD credentials and URL                           |
-| `cloudflare_api_token` | Cloudflare token for DNS-01 challenges               |
-| `forgejo_*`            | Forgejo admin credentials and URL                    |
-| `keycloak_*`           | Keycloak admin credentials and URL                   |
-| `vault_*`              | HashiCorp Vault URL and credentials                  |
-| `github_runner_pat`    | GitHub Personal Access Token for self-hosted runners |
-
-## Repository Structure
+## Repository layout
 
 ```
+.
 ├── terraform/
 │   └── layers/
-│       ├── layer-1-infrastructure/   # Proxmox VM provisioning
+│       ├── layer-1-infrastructure/   # Proxmox VM provisioning (bpg/proxmox provider)
 │       └── layer-2-helmapps/         # MetalLB + ArgoCD Helm releases
 ├── ansible/
-│   ├── ansible.cfg                   # Ansible settings
-│   ├── requirements.yml              # Ansible Galaxy collections
+│   ├── ansible.cfg                   # Ansible settings (host_key_checking, log_path)
+│   ├── requirements.yml              # Ansible Galaxy collections (kubernetes.core)
 │   ├── configurations/
-│   │   ├── deploy.yml                # Full deployment playbook
-│   │   ├── apps.yml                  # Application-only deployment
-│   │   ├── argocd.yml                # ArgoCD-specific playbook
-│   │   └── roles/                    # Ansible roles for each component
+│   │   ├── deploy.yml                # Full stack deployment playbook
+│   │   ├── apps.yml                  # Application-only deployment playbook
+│   │   ├── argocd.yml                # ArgoCD bootstrap playbook
+│   │   └── roles/                    # Per-component Ansible roles
 │   └── inventory/
 │       └── management/
 │           ├── hosts.yml             # Cluster node inventory
-│           └── group_vars/all/       # Variables and vault
-├── apps/                             # ArgoCD Application manifests + Helm values
-│   ├── argocd/                       # ArgoCD server
-│   ├── traefik/                      # Ingress controller
-│   ├── metallb/                      # Load balancer
-│   ├── cert-manager/                 # TLS certificate management
-│   ├── longhorn/                     # Distributed storage
-│   ├── vault/                        # Secret management
-│   ├── keycloak/                     # SSO/OIDC
-│   ├── forgejo/                      # Git service
-│   ├── prometheus/                   # Metrics (kube-prometheus-stack)
-│   ├── loki/                         # Log aggregation
-│   ├── tempo/                        # Distributed tracing
-│   ├── alloy/                        # Unified observability collector
-│   ├── pangolin-newt/                # VPN connector
-│   ├── github-runner/                # GitHub Actions runner controller
-│   ├── andusystems-monitoring/       # Monitoring cluster apps
-│   ├── andusystems-storage/          # Storage cluster apps
-│   ├── andusystems-networking/       # Networking cluster apps
-│   ├── andusystems-fleetdock/        # FleetDock cluster apps
-│   └── andusystems-slimerio/         # Slimerio cluster apps
-├── scripts/                          # Deployment helper scripts
-└── docs/                             # Project documentation
+│           └── group_vars/all/       # Variables and vault secrets
+├── apps/                             # ArgoCD Application manifests and Helm values
+│   ├── argocd/ metallb/ traefik/     # Core networking and GitOps
+│   ├── cert-manager/ longhorn/       # TLS management and storage
+│   ├── forgejo/ keycloak/ vault/     # Internal services
+│   ├── prometheus/ loki/ tempo/ alloy/ # Observability stack
+│   ├── pangolin-newt/ github-runner/ # VPN and CI runners
+│   ├── cluster-status/               # Cluster health application
+│   └── andusystems-*/                # Spoke cluster application sets
+├── scripts/                          # Deployment helper shell scripts
+└── docs/                             # Architecture and development guides
 ```
 
-## Spoke Clusters
+## Related repos
 
-The management cluster's ArgoCD instance deploys applications to these downstream clusters:
+| Repo | Relation |
+|---|---|
+| andusystems-monitoring | spoke — observability cluster (Grafana, Prometheus, Loki, Tempo) |
+| andusystems-storage | spoke — storage cluster (MinIO S3-compatible object store) |
+| andusystems-networking | spoke — networking cluster (PiHole DNS) |
+| andusystems-portfolio | spoke — portfolio web application cluster |
+| andusystems-slimerio | spoke — application workloads cluster |
 
-| Cluster       | Purpose                                | Key Applications                                       |
-|---------------|----------------------------------------|--------------------------------------------------------|
-| Monitoring    | Centralized observability              | Grafana, Prometheus, Loki, Tempo, Alloy, Homepage      |
-| Storage       | Persistent storage services            | MinIO (S3), Longhorn, Prometheus, Loki, Tempo          |
-| Networking    | Network services                       | PiHole (DNS), Longhorn, Prometheus, Loki               |
-| FleetDock     | Game server management                 | Longhorn, Prometheus, Loki, Tempo                      |
-| Slimerio      | Application cluster                    | Slimerio app, Longhorn, Prometheus, Loki               |
+## Further documentation
 
-Each spoke cluster also receives its own Traefik ingress controller, cert-manager instance, Pangolin-Newt VPN connector, and full observability stack (Prometheus, Loki, Tempo, Alloy).
-
-## Technology Stack
-
-| Component        | Technology                                |
-|------------------|-------------------------------------------|
-| Hypervisor       | Proxmox VE                                |
-| OS               | Ubuntu Noble 24.04 LTS                    |
-| Container Runtime| containerd                                |
-| Kubernetes       | v1.31 (kubeadm)                           |
-| CNI              | Flannel                                   |
-| GitOps           | ArgoCD                                    |
-| Ingress          | Traefik (IngressRoute CRDs)               |
-| Load Balancer    | MetalLB (L2 mode)                         |
-| TLS              | cert-manager + Let's Encrypt (Cloudflare) |
-| Storage          | Longhorn (block), MinIO (object/S3)       |
-| Git              | Forgejo (self-hosted)                     |
-| SSO              | Keycloak (OIDC)                           |
-| Secrets          | HashiCorp Vault                           |
-| Observability    | Prometheus, Loki, Tempo, Alloy, Grafana   |
-| CI/CD Runners    | GitHub Actions Runner Controller (ARC)    |
-| VPN              | Pangolin-Newt                             |
-
-## Further Documentation
-
-- [Architecture](docs/architecture.md) — Component diagram, data flows, design decisions
-- [Development Guide](docs/development.md) — Prerequisites, local setup, deployment commands
-- [Changelog](CHANGELOG.md) — Release history
+- [Architecture](docs/architecture.md) — component diagrams, data flows, design decisions
+- [Development](docs/development.md) — local setup, build, deploy, troubleshoot
+- [Changelog](CHANGELOG.md) — release history

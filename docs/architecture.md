@@ -2,41 +2,39 @@
 
 ## Overview
 
-The andusystems-management repository implements a hub-spoke infrastructure model. A central **management cluster** runs ArgoCD as the single source of truth for GitOps deployments across multiple Kubernetes clusters, each isolated on its own dedicated VLAN.
-
-All infrastructure is hosted on Proxmox bare-metal servers connected through a managed router handling inter-VLAN routing.
+The andusystems-management repository implements a hub-spoke infrastructure model. A central **management cluster** runs ArgoCD as the single source of truth for GitOps deployments across multiple Kubernetes clusters, each isolated on its own dedicated VLAN. All infrastructure is hosted on Proxmox bare-metal servers connected through a managed router that handles inter-VLAN routing.
 
 ## Component Diagram
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        Proxmox Hypervisors                          │
+│                        Proxmox Hypervisors                           │
 │                                                                      │
 │  ┌────────────────── Management Cluster (Dedicated VLAN) ─────────┐  │
 │  │                                                                 │  │
-│  │  ┌─────────────────────────────────────────────────────────┐    │  │
-│  │  │                  Ingress Layer                          │    │  │
-│  │  │  MetalLB (L2) ──► Traefik (IngressRoute CRDs)         │    │  │
-│  │  │                    ├── TLS termination                  │    │  │
-│  │  │                    └── HTTP → HTTPS redirect            │    │  │
-│  │  └─────────────────────────────────────────────────────────┘    │  │
+│  │  ┌─────────────────────────────────────────────────────────┐   │  │
+│  │  │                    Ingress Layer                        │   │  │
+│  │  │  MetalLB (L2) ──► Traefik (IngressRoute CRDs)          │   │  │
+│  │  │                    ├── TLS termination (cert-manager)   │   │  │
+│  │  │                    └── HTTP → HTTPS redirect            │   │  │
+│  │  └─────────────────────────────────────────────────────────┘   │  │
 │  │                                                                 │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │  │
 │  │  │   ArgoCD     │  │  Cert-Manager│  │  Pangolin-Newt       │  │  │
 │  │  │  (GitOps Hub)│  │  (DNS-01 via │  │  (VPN Connector)     │  │  │
-│  │  │              │  │  Cloudflare)  │  │                      │  │  │
+│  │  │              │  │  Cloudflare) │  │                      │  │  │
 │  │  └──────┬───────┘  └──────────────┘  └──────────────────────┘  │  │
 │  │         │                                                       │  │
 │  │         │  Manages deployments to:                              │  │
 │  │         │                                                       │  │
 │  │  ┌──────┴──────────────────────────────────────────────────┐   │  │
 │  │  │              Spoke Cluster Targets                       │   │  │
-│  │  │  ┌────────────┐ ┌─────────┐ ┌────────────┐ ┌────────┐  │   │  │
-│  │  │  │ Monitoring │ │ Storage │ │ Networking │ │FleetDock│  │   │  │
-│  │  │  └────────────┘ └─────────┘ └────────────┘ └────────┘  │   │  │
-│  │  │  ┌────────────┐                                         │   │  │
-│  │  │  │  Slimerio  │                                         │   │  │
-│  │  │  └────────────┘                                         │   │  │
+│  │  │  ┌────────────┐ ┌─────────┐ ┌────────────┐ ┌─────────┐  │   │  │
+│  │  │  │ Monitoring │ │ Storage │ │ Networking │ │Portfolio│  │   │  │
+│  │  │  └────────────┘ └─────────┘ └────────────┘ └─────────┘  │   │  │
+│  │  │  ┌────────────┐ ┌──────────┐                             │   │  │
+│  │  │  │  Slimerio  │ │FleetDock │                             │   │  │
+│  │  │  └────────────┘ └──────────┘                             │   │  │
 │  │  └─────────────────────────────────────────────────────────┘   │  │
 │  │                                                                 │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │  │
@@ -176,7 +174,7 @@ Each cluster has its own MetalLB instance providing LoadBalancer IPs within its 
 └──────────────────────────────┘
            ↓
 ┌─ Terraform Layer 2 ──────────┐
-│  MetalLB (L2 LB)            │
+│  MetalLB (L2 LB)             │
 │  ArgoCD (GitOps)             │
 └──────────────────────────────┘
            ↓
@@ -222,7 +220,7 @@ This avoids circular dependencies between infrastructure and cluster services.
 
 ### Single-Binary Observability
 
-Loki, Tempo, and Prometheus each run in single-binary/standalone mode rather than distributed microservice mode. This reduces resource consumption for a homelab environment while still providing full LGTM (Loki, Grafana, Tempo, Mimir/Prometheus) stack capabilities.
+Loki, Tempo, and Prometheus each run in single-binary/standalone mode rather than distributed microservice mode. This reduces resource consumption for a homelab environment while still providing full LGTM (Loki, Grafana, Tempo, Metrics) stack capabilities.
 
 Loki and Tempo use MinIO (on the storage cluster) as their S3-compatible object storage backend for log chunks and trace data respectively.
 
@@ -254,26 +252,27 @@ Sync policies are set to automated with `prune` and `selfHeal` enabled, allowing
 
 Each spoke cluster receives a standardized base stack deployed from the management ArgoCD:
 
-| Component        | Purpose                                    |
-|------------------|--------------------------------------------|
-| Traefik          | Ingress controller with LoadBalancer IP    |
-| Cert-Manager     | TLS certificates via Let's Encrypt         |
-| Pangolin-Newt    | VPN connectivity                           |
-| Longhorn         | Distributed block storage                  |
-| Prometheus       | Metrics collection (kube-prometheus-stack)  |
-| Loki             | Log aggregation                            |
-| Tempo            | Distributed tracing                        |
-| Alloy            | Unified observability collector            |
+| Component | Purpose |
+|---|---|
+| Traefik | Ingress controller with MetalLB LoadBalancer IP |
+| cert-manager | TLS certificates via Let's Encrypt |
+| Pangolin-Newt | VPN connectivity |
+| Longhorn | Distributed block storage |
+| kube-prometheus-stack | Metrics collection |
+| Loki | Log aggregation |
+| Tempo | Distributed tracing |
+| Alloy | Unified observability collector — ships data to management cluster |
 
 Additionally, each cluster runs its specialized workloads:
 
-| Cluster    | Specialized Applications                        |
-|------------|--------------------------------------------------|
-| Monitoring | Grafana (dashboards), Homepage (status page)     |
-| Storage    | MinIO (S3-compatible object storage)             |
-| Networking | PiHole (DNS/ad-blocking)                         |
-| FleetDock  | Game server management platform                  |
-| Slimerio   | Application workloads (managed via separate repo)|
+| Cluster | Specialized Applications |
+|---|---|
+| Monitoring | Grafana (dashboards), Homepage (status page) |
+| Storage | MinIO (S3-compatible object storage) |
+| Networking | PiHole (DNS/ad-blocking) |
+| Portfolio | Web application cluster |
+| FleetDock | Game server management platform |
+| Slimerio | Application workloads (managed via separate repo) |
 
 ## Invariants
 
@@ -285,28 +284,26 @@ Additionally, each cluster runs its specialized workloads:
 - **ArgoCD runs insecure**: The ArgoCD server runs in insecure (plaintext) mode internally; TLS is terminated at the Traefik ingress layer.
 - **Longhorn storage dependency**: Services requiring persistent volumes (Forgejo, Prometheus, Loki, Vault) depend on Longhorn being deployed and healthy.
 
-## Kubernetes Details
+## Kubernetes and Helm Chart Versions
 
-| Component        | Version / Chart                                   |
-|------------------|---------------------------------------------------|
-| Kubernetes       | v1.31                                             |
-| Container Runtime| containerd                                        |
-| CNI              | Flannel                                           |
-| OS               | Ubuntu Noble 24.04 LTS                            |
-| ArgoCD           | Helm chart argo-cd v9.4.4                         |
-| Traefik          | Helm chart traefik v32.1.1 (image v3.6.7)        |
-| Cert-Manager     | Helm chart cert-manager v1.14.4                   |
-| MetalLB          | Helm chart metallb v0.15.3                        |
-| Longhorn         | Helm chart longhorn v1.7.3                        |
-| Vault            | Helm chart vault v0.29.1                          |
-| Keycloak         | Helm chart keycloakx v2.5.0                       |
-| Forgejo          | Helm chart forgejo v16.2.1 (OCI)                  |
-| Prometheus       | Helm chart kube-prometheus-stack v69.3.2           |
-| Loki             | Helm chart loki v6.25.0                           |
-| Tempo            | Helm chart tempo v1.14.0                          |
-| Alloy            | Helm chart k8s-monitoring v2.0.6                  |
-| Pangolin-Newt    | Helm chart newt v1.2.0                            |
-| Grafana          | Helm chart grafana v8.8.2                         |
-| Homepage         | Helm chart homepage v2.1.0                        |
-| PiHole           | Helm chart pihole v1.2.1                          |
-| MinIO            | Helm chart minio v5.4.0                           |
+| Component | Chart / Version |
+|---|---|
+| Kubernetes | v1.31 (kubeadm) |
+| Container Runtime | containerd |
+| CNI | Flannel |
+| OS | Ubuntu Noble 24.04 LTS |
+| ArgoCD | argo-cd v9.4.4 |
+| Traefik | traefik v32.1.1 (image v3.6.7) |
+| cert-manager | cert-manager v1.14.4 |
+| MetalLB | metallb v0.15.3 |
+| Longhorn | longhorn v1.7.3 |
+| Vault | vault v0.29.1 |
+| Keycloak | keycloakx v2.5.0 |
+| Forgejo | forgejo v16.2.1 (OCI registry) |
+| kube-prometheus-stack | kube-prometheus-stack v69.3.2 |
+| Loki | loki v6.25.0 |
+| Tempo | tempo v1.14.0 |
+| Alloy | k8s-monitoring v2.0.6 |
+| Pangolin-Newt | newt v1.3.0 |
+| MinIO | minio v5.4.0 |
+| PiHole | pihole v1.2.1 |

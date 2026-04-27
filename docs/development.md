@@ -4,14 +4,14 @@
 
 ### Required Tools
 
-| Tool            | Minimum Version | Installation                                             |
-|-----------------|-----------------|----------------------------------------------------------|
-| Terraform       | >= 1.5.0        | [terraform.io](https://developer.hashicorp.com/terraform/install) |
-| Ansible         | >= 2.15         | `pip install ansible`                                    |
-| kubectl         | >= 1.31         | [kubernetes.io](https://kubernetes.io/docs/tasks/tools/) |
-| Helm            | >= 3.x          | [helm.sh](https://helm.sh/docs/intro/install/)          |
-| ArgoCD CLI      | >= 2.12         | [argo-proj.github.io](https://argo-cd.readthedocs.io/en/stable/cli_installation/) |
-| Python          | >= 3.10         | Required by Ansible                                      |
+| Tool | Minimum Version | Installation |
+|---|---|---|
+| Terraform | >= 1.5.0 | [developer.hashicorp.com/terraform/install](https://developer.hashicorp.com/terraform/install) |
+| Ansible | >= 2.15 | `pip install ansible` |
+| kubectl | >= 1.31 | [kubernetes.io/docs/tasks/tools](https://kubernetes.io/docs/tasks/tools/) |
+| Helm | >= 3.x | [helm.sh/docs/intro/install](https://helm.sh/docs/intro/install/) |
+| ArgoCD CLI | >= 2.12 | [argo-cd.readthedocs.io/en/stable/cli_installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/) |
+| Python | >= 3.10 | Required by Ansible |
 
 ### Ansible Collections
 
@@ -51,7 +51,7 @@ cp ansible/inventory/management/group_vars/all/vault.example \
    ansible/inventory/management/group_vars/all/vault.yml
 ```
 
-Edit `vault.yml` and fill in all `vault_` prefixed variables. Then encrypt it:
+Edit `vault.yml` and fill in all required variables. Then encrypt it:
 
 ```bash
 ansible-vault encrypt ansible/inventory/management/group_vars/all/vault.yml
@@ -71,17 +71,17 @@ terraform/layers/layer-2-helmapps/terraform.tfvars
 
 Key variables for Layer 1:
 
-| Variable                    | Description                              |
-|-----------------------------|------------------------------------------|
-| `proxmox_endpoint`          | Proxmox API URL                          |
-| `proxmox_api_token`         | Proxmox authentication token             |
-| `proxmox_control_plane_node`| Proxmox node name for control plane VM   |
-| `proxmox_worker_nodes`      | List of Proxmox node names for workers   |
-| `control_plane_ip`          | Static IP for control plane              |
-| `worker_ips`                | List of static IPs for workers           |
-| `network_gateway`           | Default gateway IP                       |
-| `ssh_public_key`            | SSH public key for VM access             |
-| `kubeconfig_path`           | Local path to store kubeconfig           |
+| Variable | Description |
+|---|---|
+| `proxmox_endpoint` | Proxmox API URL |
+| `proxmox_api_token` | Proxmox authentication token |
+| `proxmox_control_plane_node` | Proxmox node name for control plane VM |
+| `proxmox_worker_nodes` | List of Proxmox node names for workers |
+| `control_plane_ip` | Static IP for control plane |
+| `worker_ips` | List of static IPs for workers |
+| `network_gateway` | Default gateway IP |
+| `ssh_public_key` | SSH public key for VM access |
+| `kubeconfig_path` | Local path to store kubeconfig |
 
 ### 4. Initialize Terraform
 
@@ -156,16 +156,16 @@ terraform apply
 
 Shell scripts in `scripts/` provide shortcuts for common partial deployments:
 
-| Script                 | Purpose                                    |
-|------------------------|--------------------------------------------|
-| `scripts/vms.sh`       | Deploy VMs only                            |
-| `scripts/kubernetes.sh`| Deploy Kubernetes only                     |
-| `scripts/argocd.sh`    | Bootstrap ArgoCD                           |
-| `scripts/apps.sh`      | Deploy all applications                    |
-| `scripts/management-apps.sh` | Deploy management cluster apps only  |
-| `scripts/monitoring-apps.sh` | Deploy monitoring cluster apps only  |
-| `scripts/github-runner.sh`   | Deploy GitHub Actions runners        |
-| `scripts/redeploy.sh`  | Full redeployment from scratch             |
+| Script | Purpose |
+|---|---|
+| `scripts/vms.sh` | Deploy VMs only |
+| `scripts/kubernetes.sh` | Deploy Kubernetes only |
+| `scripts/argocd.sh` | Bootstrap ArgoCD |
+| `scripts/apps.sh` | Deploy all applications |
+| `scripts/management-apps.sh` | Deploy management cluster apps only |
+| `scripts/monitoring-apps.sh` | Deploy monitoring cluster apps only |
+| `scripts/github-runner.sh` | Deploy GitHub Actions runners |
+| `scripts/redeploy.sh` | Full redeployment from scratch |
 
 ## Deployment Order
 
@@ -176,14 +176,15 @@ VMs → Kubernetes → ArgoCD + MetalLB → Longhorn → Forgejo
   → Traefik → Pangolin-Newt → Cert-Manager → Keycloak → Vault
   → Observability (Prometheus, Loki, Tempo, Alloy)
   → GitHub Runner (ARC)
-  → Spoke Cluster Apps (Networking, Storage, Monitoring, FleetDock, Slimerio)
+  → Spoke Cluster Apps (Networking, Storage, Monitoring, Portfolio, Slimerio)
 ```
 
 Critical ordering constraints:
-- **Longhorn before Forgejo**: Forgejo requires persistent storage
-- **Forgejo before Traefik**: ArgoCD applications reference Forgejo for Helm values
+
+- **Longhorn before Forgejo**: Forgejo requires a persistent volume for Git repository data
+- **Forgejo before Traefik**: ArgoCD applications reference Forgejo as the `$values` source for Helm values
 - **MetalLB before any LoadBalancer service**: Services cannot get external IPs without MetalLB
-- **Cert-Manager after Traefik**: IngressRoutes need TLS certificates
+- **Cert-Manager after Traefik**: IngressRoutes need TLS certificates to be issued
 
 ## Playbook Structure
 
@@ -191,22 +192,22 @@ Critical ordering constraints:
 
 The master playbook that runs the full deployment. It imports roles in dependency order:
 
-| Order | Role                       | Purpose                                  |
-|-------|----------------------------|------------------------------------------|
-| 1     | `vms`                      | Terraform VM provisioning + SSH setup    |
-| 2     | `kubernetes`               | K8s v1.31 bootstrap with containerd      |
-| 3     | `argocd`                   | ArgoCD + MetalLB + cluster registration  |
-| 4     | `longhorn`                 | Distributed storage                      |
-| 5     | `forgejo`                  | Git service + org/user/repo creation     |
-| 6     | `traefik`                  | Ingress controller                       |
-| 7     | `pangolin-newt`            | VPN connector                            |
-| 8     | `cert-manager`             | TLS certificates                         |
-| 9     | `keycloak`                 | SSO/OIDC                                 |
-| 10    | `vault`                    | Secret management                        |
-| 11    | `andusystems-networking`   | Networking cluster apps                  |
-| 12    | `andusystems-storage`      | Storage cluster apps                     |
-| 13    | `andusystems-monitoring`   | Monitoring cluster apps                  |
-| 14    | `andusystems-fleetdock`    | FleetDock cluster apps                   |
+| Order | Role | Purpose |
+|---|---|---|
+| 1 | `vms` | Terraform VM provisioning + SSH setup |
+| 2 | `kubernetes` | K8s v1.31 bootstrap with containerd |
+| 3 | `argocd` | ArgoCD + MetalLB + cluster registration |
+| 4 | `longhorn` | Distributed storage |
+| 5 | `forgejo` | Git service + org/user/repo creation |
+| 6 | `traefik` | Ingress controller |
+| 7 | `pangolin-newt` | VPN connector |
+| 8 | `cert-manager` | TLS certificates |
+| 9 | `keycloak` | SSO/OIDC |
+| 10 | `vault` | Secret management |
+| 11 | `andusystems-networking` | Networking cluster apps |
+| 12 | `andusystems-storage` | Storage cluster apps |
+| 13 | `andusystems-monitoring` | Monitoring cluster apps |
+| 14 | `andusystems-portfolio` | Portfolio cluster apps |
 
 ### apps.yml
 
@@ -216,8 +217,10 @@ Application-only deployment that skips VM and Kubernetes provisioning. Useful fo
 - `loki` — Log aggregation
 - `tempo` — Distributed tracing
 - `alloy` — Unified observability collector
+- `cluster-status` — Cluster health status application
 - `github-runner` — GitHub Actions Runner Controller
 - `andusystems-slimerio` — Slimerio cluster registration
+- `andusystems-portfolio` — Portfolio cluster registration
 
 ### argocd.yml
 
@@ -235,22 +238,23 @@ Minimal playbook focused on ArgoCD bootstrap:
 
 Ansible variables are sourced from Ansible Vault. The following categories of variables are used:
 
-| Category              | Example Keys                                        |
-|-----------------------|-----------------------------------------------------|
-| Paths                 | `repo_root`, `tfvars_file`, `apps_dir`, `kubeconfig`|
-| SSH                   | `ssh_user`, `ssh_key_path`                          |
-| Network               | `control_plane_ip`, `worker_ips`, `metallb_ip_range`|
-| Kubernetes            | `kubernetes_version`, `pod_network_cidr`            |
-| ArgoCD                | `argocd_url`, `argocd_admin_password`               |
-| DNS/TLS               | `cloudflare_api_token`, `letsencrypt_email`         |
-| Forgejo               | `forgejo_url`, `forgejo_admin_password`              |
-| Keycloak              | `keycloak_url`, `keycloak_admin_user`               |
-| Vault                 | `vault_url`                                         |
-| VPN                   | `newt_id`, `newt_secret`, `newt_endpoint`           |
-| Monitoring            | `minio_access_key`, `minio_secret_key`              |
-| CI/CD                 | `github_runner_pat`                                 |
-| Per-Cluster Traefik   | `monitoring_traefik_server_ip`, etc.                |
-| Per-Cluster Kubeconfig| `monitoring_kubeconfig`, `fleetdock_kubeconfig`, etc.|
+| Category | Example Keys |
+|---|---|
+| Paths | `repo_root`, `tfvars_file`, `apps_dir`, `kubeconfig` |
+| SSH | `ssh_user`, `ssh_key_path` |
+| Network | `control_plane_ip`, `worker_ips`, `metallb_ip_range` |
+| Kubernetes | `kubernetes_version`, `pod_network_cidr` |
+| ArgoCD | `argocd_url`, `argocd_admin_password`, `argocd_server_ip` |
+| DNS/TLS | `cloudflare_api_token`, `letsencrypt_email` |
+| Forgejo | `forgejo_url`, `forgejo_admin_password` |
+| Keycloak | `keycloak_url`, `keycloak_admin_user`, `keycloak_admin_password` |
+| Vault | `vault_url` |
+| VPN | `newt_id`, `newt_secret`, `pangolin_endpoint` |
+| Monitoring | `minio_root_user`, `minio_root_password` |
+| OIDC | `grafana_oidc_client_secret` |
+| CI/CD | `github_runner_pat`, `github_runner_repo` |
+| Per-Cluster Traefik IPs | `monitoring_traefik_server_ip`, `storage_traefik_server_ip`, etc. |
+| Per-Cluster Kubeconfigs | `monitoring_kubeconfig`, `storage_kubeconfig`, etc. |
 
 ## Ansible Configuration
 
@@ -287,7 +291,7 @@ To register a new spoke cluster with the management ArgoCD:
 
 1. **Obtain the kubeconfig** for the new cluster and store it as an Ansible Vault variable.
 
-2. **Register the cluster** in the ArgoCD role (`ansible/configurations/roles/argocd/tasks/install.yml`) by adding a cluster registration command.
+2. **Register the cluster** in the ArgoCD role (`ansible/configurations/roles/argocd/tasks/install.yml`) by adding a cluster registration command with the appropriate label (`argocd.argoproj.io/secret-type=cluster`).
 
 3. **Create an app manifest directory** under `apps/andusystems-<cluster-name>/` containing the ArgoCD Application manifests for each service to deploy.
 
@@ -297,31 +301,29 @@ To register a new spoke cluster with the management ArgoCD:
 
 ## Traefik Configuration
 
-The Traefik ingress controller is configured via `apps/traefik/values.yml`. The ArgoCD Application manifest (`apps/traefik/manifest.yml`) deploys Traefik using Helm chart v32.1.1 into the `traefik` namespace, with a MetalLB-backed LoadBalancer service.
+The Traefik ingress controller is configured via `apps/traefik/values.yml`. The ArgoCD Application manifest (`apps/traefik/manifest.yml`) deploys Traefik using Helm chart v32.1.1 (image v3.6.7) into the `traefik` namespace, with a MetalLB-backed LoadBalancer service.
 
 ### Providers
 
-Traefik is configured with two Kubernetes providers:
-
-| Provider             | Setting                       | Value  | Purpose                                      |
-|----------------------|-------------------------------|--------|----------------------------------------------|
-| `kubernetesIngress`  | `publishedService.enabled`    | `true` | Populates Ingress status with the LB address |
-| `kubernetesCRD`      | `enabled`                     | `true` | Enables Traefik IngressRoute CRDs            |
-| `kubernetesCRD`      | `allowCrossNamespace`         | `true` | Routes can reference services in other namespaces |
-| `kubernetesCRD`      | `allowExternalNameServices`   | `true` | Routes can target ExternalName services      |
+| Provider | Setting | Value | Purpose |
+|---|---|---|---|
+| `kubernetesIngress` | `publishedService.enabled` | `true` | Populates Ingress status with the LB address |
+| `kubernetesCRD` | `enabled` | `true` | Enables Traefik IngressRoute CRDs |
+| `kubernetesCRD` | `allowCrossNamespace` | `true` | Routes can reference services in other namespaces |
+| `kubernetesCRD` | `allowExternalNameServices` | `true` | Routes can target ExternalName services |
 
 ### Entrypoints (Ports)
 
-| Entrypoint  | Container Port | Exposed Port | Protocol | Notes                              |
-|-------------|----------------|--------------|----------|------------------------------------|
-| `web`       | 8000           | 80           | TCP      | HTTP traffic                       |
-| `websecure` | 8443           | 443          | TCP      | HTTPS traffic                      |
+| Entrypoint | Container Port | Exposed Port | Protocol | Notes |
+|---|---|---|---|---|
+| `web` | 8000 | 80 | TCP | HTTP traffic |
+| `websecure` | 8443 | 443 | TCP | HTTPS traffic |
 
 HTTP-to-HTTPS redirection is commented out until TLS is fully configured. To enable it, uncomment the `redirections` block under the `web` entrypoint.
 
 ### RBAC
 
-RBAC is enabled cluster-wide (`namespaced: false`) to support cross-namespace routing. An additional `ClusterRole` and `ClusterRoleBinding` (`traefik-configmap-access`) are created via `extraObjects` to grant the `management-traefik` service account read access to ConfigMaps (`get`, `list`, `watch`). This resolves a "configmaps forbidden" error that occurs with the default Helm RBAC.
+RBAC is enabled cluster-wide (`namespaced: false`) to support cross-namespace routing. An additional `ClusterRole` and `ClusterRoleBinding` (`traefik-configmap-access`) are created via `extraObjects` to grant the `management-traefik` service account read access to ConfigMaps. This resolves a "configmaps forbidden" error that occurs with the default Helm RBAC.
 
 ### Additional Arguments
 
