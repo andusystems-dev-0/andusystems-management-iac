@@ -1,2 +1,5 @@
 # Shell scripts: always LF so they run in WSL/Linux
 * text eol=lf
+
+# Linguist language overrides
+ansible/** linguist-language=Ansible
