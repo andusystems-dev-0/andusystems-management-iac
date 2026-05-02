@@ -3,9 +3,14 @@
 # applied to the portfolio cluster BEFORE ArgoCD syncs the cluster-status
 # Deployment that references this ConfigMap.
 #
-# Traefik LB IPs come from management vault vars. The proxy connects over
-# HTTP (port 80 / web entrypoint) to each remote cluster's Traefik and
-# sets the Host header so the IngressRoute matches.
+# Traefik LB IPs come from management vault vars. Each spoke cluster's
+# cluster-status IngressRoute is restricted to /healthz path AND the
+# portfolio cluster's node CIDR via an ipAllowList Middleware (see each
+# spoke's apps/cluster-status/manifest.yml). The proxy connects over
+# HTTPS (port 443 / websecure entrypoint) — the IngressRoutes have a tls:
+# block that effectively makes them HTTPS-only. Cert verification is off
+# because we connect by IP rather than hostname; SNI is set explicitly so
+# Traefik picks the right cert.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -24,32 +29,44 @@ data:
 
       # Management cluster (VLAN 10)
       location = /api/status/management {
-        proxy_pass http://{{ management_traefik_server_ip }}/healthz;
+        proxy_pass https://{{ management_traefik_server_ip }}/healthz;
         proxy_set_header Host status-management.andusystems.com;
+        proxy_ssl_server_name on;
+        proxy_ssl_name status-management.andusystems.com;
+        proxy_ssl_verify off;
         proxy_connect_timeout 5s;
         proxy_read_timeout 5s;
       }
 
       # Networking cluster (VLAN 30)
       location = /api/status/networking {
-        proxy_pass http://{{ networking_traefik_server_ip }}/healthz;
+        proxy_pass https://{{ networking_traefik_server_ip }}/healthz;
         proxy_set_header Host status-networking.andusystems.com;
+        proxy_ssl_server_name on;
+        proxy_ssl_name status-networking.andusystems.com;
+        proxy_ssl_verify off;
         proxy_connect_timeout 5s;
         proxy_read_timeout 5s;
       }
 
       # Storage cluster (VLAN 40)
       location = /api/status/storage {
-        proxy_pass http://{{ storage_traefik_server_ip }}/healthz;
+        proxy_pass https://{{ storage_traefik_server_ip }}/healthz;
         proxy_set_header Host status-storage.andusystems.com;
+        proxy_ssl_server_name on;
+        proxy_ssl_name status-storage.andusystems.com;
+        proxy_ssl_verify off;
         proxy_connect_timeout 5s;
         proxy_read_timeout 5s;
       }
 
       # Monitoring cluster (VLAN 50)
       location = /api/status/monitoring {
-        proxy_pass http://{{ monitoring_traefik_server_ip }}/healthz;
+        proxy_pass https://{{ monitoring_traefik_server_ip }}/healthz;
         proxy_set_header Host status-monitoring.andusystems.com;
+        proxy_ssl_server_name on;
+        proxy_ssl_name status-monitoring.andusystems.com;
+        proxy_ssl_verify off;
         proxy_connect_timeout 5s;
         proxy_read_timeout 5s;
       }

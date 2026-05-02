@@ -14,5 +14,9 @@
 - import_playbook: ./roles/andusystems-networking.yml
 - import_playbook: ./roles/andusystems-storage.yml
 - import_playbook: ./roles/andusystems-monitoring.yml
+# Management cluster's own /healthz endpoint, fronted by an IngressRoute
+# locked to the portfolio cluster CIDR (apps/cluster-status/). The role
+# only registers the ArgoCD Application; ArgoCD then syncs the workload.
+- import_playbook: ./roles/cluster-status.yml
 # Fleetdock cluster deployment temporarily disabled.
 # - import_playbook: ./roles/andusystems-fleetdock.yml
