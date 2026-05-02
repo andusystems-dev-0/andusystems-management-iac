@@ -5,7 +5,8 @@
 
     - include_role:
         name: argocd
-      tags: 
+      tags:
         - argocd
         - cleanup
         - install
+        - register-clusters

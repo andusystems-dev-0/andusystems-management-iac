@@ -15,8 +15,9 @@
   no_log: true
 
 # --- Configure github-actions service account for deploy workflows ---
-# Creates an apiKey-capable account and RBAC scoped to sync slimerio-app.
-# Token is stored in a k8s Secret for retrieval; copy into GitHub Secrets.
+# Creates an apiKey-capable account. Token is stored in a k8s Secret for
+# retrieval; copy into GitHub Secrets. Add per-app RBAC rules below as
+# Applications are introduced.
 
 - name: Patch argocd-cm to register github-actions account
   kubernetes.core.k8s:
@@ -40,9 +41,6 @@
       data:
         policy.csv: |
           p, github-actions, projects, get, default, allow
-          p, github-actions, applications, get, default/slimerio-app, allow
-          p, github-actions, applications, sync, default/slimerio-app, allow
-          p, github-actions, applications, action/*, default/slimerio-app, allow
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
 
@@ -92,7 +90,7 @@
     msg:
       - "============================================================"
       - "ArgoCD 'github-actions' account configured and token stored."
-      - "To add to Slimerio repo's GitHub Secrets, run:"
+      - "To add to a consuming repo's GitHub Secrets, run:"
       - ""
       - "  kubectl --kubeconfig {{ kubeconfig }} -n argocd \\"
       - "    get secret github-actions-token -o jsonpath='{.data.token}' | base64 -d"

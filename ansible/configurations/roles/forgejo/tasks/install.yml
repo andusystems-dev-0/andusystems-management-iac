@@ -1,5 +1,5 @@
 ---
-#<REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected>te the Kubernetes namespace and seed it with secrets needed by the Forgejo deployment.
+#<REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected><REMOVED BY SENTINEL BOT: SECRET — secret or credential detected>te the Kubernetes namespace and seed it with secrets needed by the Forgejo deployment.
 - name: Create forgejo namespace
   kubernetes.core.k8s:
     state: present
@@ -82,7 +82,7 @@
 # The pod may be ready before the HTTP server finishes its first-run migrations.
 - name: Wait for Forgejo API to be responsive (via control plane)
   command: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     curl -sf {{ forgejo_internal_url }}/api/v1/settings/api
   register: api_check
   until: api_check.rc == 0
@@ -95,7 +95,7 @@
 # memberships are scoped under this org.
 - name: Check if andusystems org exists
   command: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     curl -sf -o /dev/null -w '%{http_code}'
     -u 'forgejo_admin:{{ forgejo_admin_password }}'
     {{ forgejo_internal_url }}/api/v1/orgs/andusystems
@@ -105,7 +105,7 @@
 
 - name: Create andusystems org
   shell: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     'curl -sf -X POST
     -u "forgejo_admin:{{ forgejo_admin_password }}"
     -H "Content-Type: application/json"
@@ -131,7 +131,7 @@
 
 - name: Check if Forgejo user exists
   shell: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     'curl -sf -o /dev/null -w "%{http_code}"
     -u "forgejo_admin:{{ forgejo_admin_password }}"
     {{ forgejo_internal_url }}/api/v1/users/{{ item.username }}'
@@ -144,7 +144,7 @@
 
 - name: Create Forgejo user via admin API
   shell: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     'curl -sf -X POST
     -u "forgejo_admin:{{ forgejo_admin_password }}"
     -H "Content-Type: application/json"
@@ -159,7 +159,7 @@
 # Look up the Owners team ID so we can add users to it in the next step.
 - name: Get andusystems org Owners team ID
   shell: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     'curl -sf
     -u "forgejo_admin:{{ forgejo_admin_password }}"
     {{ forgejo_internal_url }}/api/v1/orgs/andusystems/teams/search?q=Owners'
@@ -172,7 +172,7 @@
 
 - name: Add users to andusystems Owners team
   shell: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     'curl -sf -X PUT
     -u "forgejo_admin:{{ forgejo_admin_password }}"
     -o /dev/null -w "%{http_code}"
@@ -198,16 +198,12 @@
         description: "Networking cluster IaC (VLAN 30)"
       - name: "andusystems-storage"
         description: "Storage cluster IaC (VLAN 40)"
-      - name: "andusystems-fleetdock"
-        description: "FleetDock cluster IaC (VLAN 30/60)"
-      - name: "andusystems-slimerio"
-        description: "Slimerio cluster IaC"
       - name: "andusystems-portfolio"
         description: "Portfolio cluster IaC"
 
 - name: Check if Forgejo IaC repo exists
   shell: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     'curl -sf -o /dev/null -w "%{http_code}"
     -u "forgejo_admin:{{ forgejo_admin_password }}"
     {{ forgejo_internal_url }}/api/v1/repos/andusystems/{{ item.name }}'
@@ -220,7 +216,7 @@
 
 - name: Create Forgejo IaC repo
   shell: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     'curl -sf -X POST
     -u "forgejo_admin:{{ forgejo_admin_password }}"
     -H "Content-Type: application/json"
@@ -258,8 +254,8 @@
   shell: |
     cd {{ repo_root }}
     git bundle create /tmp/management-repo.bundle --all
-    scp -o StrictHostKeyChecking=no /tmp/management-repo.bundle {{ ssh_user }}@{{ control_plane_ip }}:/tmp/
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }} bash -c '
+    scp -i {{ ssh_key_path }} -o StrictHostKeyChecking=no /tmp/management-repo.bundle {{ ssh_user }}@{{ control_plane_ip }}:/tmp/
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }} bash -c '
       cd /tmp &&
       git clone management-repo.bundle management-repo &&
       cd management-repo &&
@@ -273,7 +269,7 @@
 
 # --- Push spoke cluster repos to Forgejo ---
 # The forgejo_iac_repos creation loop above creates EMPTY repos for every spoke
-# cluster (storage, monitoring, networking, fleetdock, slimerio). ArgoCD's
+# cluster (storage, monitoring, networking, portfolio). ArgoCD's
 # Application resources for those clusters reference forgejo via the multi-source
 # `$values` ref pattern; without content in the repo, every spoke Application
 # fails to render with "failed to get git client for repo".
@@ -289,8 +285,6 @@
       - { name: andusystems-monitoring,  path: /home/admin/andusystems/andusystems-monitoring  }
       - { name: andusystems-networking,  path: /home/admin/andusystems/andusystems-networking  }
       - { name: andusystems-storage,     path: /home/admin/andusystems/andusystems-storage     }
-      - { name: andusystems-fleetdock,   path: /home/admin/andusystems/andusystems-fleetdock   }
-      - { name: andusystems-slimerio,    path: /home/admin/andusystems/andusystems-slimerio    }
       - { name: andusystems-portfolio,   path: /home/admin/andusystems/andusystems-portfolio   }
 
 - name: Check if spoke cluster local clones exist
@@ -306,9 +300,9 @@
     set -e
     cd {{ item.item.path }}
     git bundle create /tmp/{{ item.item.name }}.bundle --all
-    scp -o StrictHostKeyChecking=no /tmp/{{ item.item.name }}.bundle \
+    scp -i {{ ssh_key_path }} -o StrictHostKeyChecking=no /tmp/{{ item.item.name }}.bundle \
         {{ ssh_user }}@{{ control_plane_ip }}:/tmp/
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }} bash -c '
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }} bash -c '
       set -e
       cd /tmp && rm -rf {{ item.item.name }}-repo
       git clone {{ item.item.name }}.bundle {{ item.item.name }}-repo
@@ -346,13 +340,19 @@
       - name: andusystems-sentinel
         description: "Sentinel autonomous SDLC engine"
         path: /home/admin/andusystems/andusystems-sentinel
+      - name: andusystems-dispatch
+        description: ""
+        path: /home/admin/andusystems/andusystems-dispatch
       - name: Portfolio
         description: "Portfolio application"
         path: /home/admin/andusystems/Portfolio
+      - name: ops
+        description: "Repo for handling Andusystems work, ops, and kanban"
+        path: /home/admin/andusystems/ops
 
 - name: Check if extra Forgejo repo exists
   shell: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     'curl -sf -o /dev/null -w "%{http_code}"
     -u "forgejo_admin:{{ forgejo_admin_password }}"
     {{ forgejo_internal_url }}/api/v1/repos/andusystems/{{ item.name }}'
@@ -365,7 +365,7 @@
 
 - name: Create extra Forgejo repo
   shell: >
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
     'curl -sf -X POST
     -u "forgejo_admin:{{ forgejo_admin_password }}"
     -H "Content-Type: application/json"
@@ -389,9 +389,9 @@
     set -e
     cd {{ item.item.path }}
     git bundle create /tmp/{{ item.item.name }}.bundle --all
-    scp -o StrictHostKeyChecking=no /tmp/{{ item.item.name }}.bundle \
+    scp -i {{ ssh_key_path }} -o StrictHostKeyChecking=no /tmp/{{ item.item.name }}.bundle \
         {{ ssh_user }}@{{ control_plane_ip }}:/tmp/
-    ssh -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }} bash -c '
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }} bash -c '
       set -e
       cd /tmp && rm -rf {{ item.item.name }}-repo
       git clone {{ item.item.name }}.bundle {{ item.item.name }}-repo
@@ -406,6 +406,43 @@
     label: "{{ item.item.name }}"
   when: item.stat.exists and item.stat.isdir
   changed_when: true
+
+# --- Create kanban Project on ops repo ---
+# The ops repo carries our day-to-day kanban. Create a basic_kanban Project
+# (To Do / In Progress / Done columns) via the Forgejo Projects API. This is
+# best-effort: the API surface for projects has shifted across Forgejo
+# versions, so a non-2xx response is logged but does not fail the play. If it
+# fails, create the Project manually via the Forgejo UI on the ops repo.
+- name: Check existing Projects on ops repo
+  shell: >
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -sf
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    {{ forgejo_internal_url }}/api/v1/repos/andusystems/ops/projects'
+  register: ops_projects_check
+  changed_when: false
+  failed_when: false
+
+- name: Create kanban Project on ops repo
+  shell: >
+    ssh -i {{ ssh_key_path }} -o StrictHostKeyChecking=no {{ ssh_user }}@{{ control_plane_ip }}
+    'curl -s -o /dev/null -w "%{http_code}" -X POST
+    -u "forgejo_admin:{{ forgejo_admin_password }}"
+    -H "Content-Type: application/json"
+    -d "{\"title\":\"Ops\",\"description\":\"Andusystems ops kanban\",\"board_type\":\"basic_kanban\"}"
+    {{ forgejo_internal_url }}/api/v1/repos/andusystems/ops/projects'
+  register: ops_project_create
+  changed_when: ops_project_create.stdout in ['200', '201']
+  failed_when: false
+  when: ops_projects_check.stdout is not defined or '"title":"Ops"' not in (ops_projects_check.stdout | default(''))
+
+- name: Note if kanban Project creation failed
+  debug:
+    msg: "Kanban Project create returned HTTP {{ ops_project_create.stdout | default('n/a') }} — if not 200/201, create it manually in the Forgejo UI on the ops repo."
+  when:
+    - ops_project_create is defined
+    - ops_project_create.stdout is defined
+    - ops_project_create.stdout not in ['200', '201']
 
 # --- Register repos with ArgoCD ---
 # Authenticate with ArgoCD and register every IaC repo so ArgoCD can monitor
@@ -449,6 +486,8 @@
       - "Public URL: https://forgejo.andusystems.com"
       - "Admin: forgejo_admin"
       - "IaC repos created: {{ forgejo_iac_repos | map(attribute='name') | list | join(', ') }}"
+      - "Extra repos created: {{ forgejo_extra_repos | map(attribute='name') | list | join(', ') }}"
       - "Users created: sentinel, {{ forgejo_alex_username }}"
       - "Management repo pushed to Forgejo"
       - "Reminder: generate a new sentinel PAT via Forgejo UI after deploy, then update FORGEJO_SENTINEL_TOKEN in sentinel/.env"
+      - "Reminder: if the ops kanban Project did not auto-create, add it manually via the Forgejo UI on the ops repo."

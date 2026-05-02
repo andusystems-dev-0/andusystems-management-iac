@@ -14,6 +14,47 @@
   kubernetes.core.k8s:
     state: present
     definition: "{{ lookup('template', repo_root + '/apps/pangolin-newt/manifest.yml') | from_yaml_all | list }}"
+  register: newt_secret_apply
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+# Newt reads the endpoint/id/secret from this Secret at startup only; a
+# Secret edit doesn't propagate to running pods. If we just rewrote the
+# Secret, find any Newt deployments and rollout-restart them so they pick
+# up the new values. On first install the deployment doesn't exist yet
+# (ArgoCD hasn't synced the Helm chart), so the lookup is empty and this
+# is a no-op — only meaningful on re-runs after a vault edit.
+- name: Find existing Newt deployments (if any)
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: newt
+    label_selectors:
+      - "app.kubernetes.io/name=newt"
+  register: newt_deployments
+  when: newt_secret_apply.changed
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+- name: Rollout-restart Newt deployments to reload Secret
+  kubernetes.core.k8s:
+    state: patched
+    api_version: apps/v1
+    kind: Deployment
+    namespace: newt
+    name: "{{ item.metadata.name }}"
+    definition:
+      spec:
+        template:
+          metadata:
+            annotations:
+              kubectl.kubernetes.io/restartedAt: "{{ ansible_date_time.iso8601 }}"
+  loop: "{{ newt_deployments.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - newt_secret_apply.changed
+    - newt_deployments.resources | default([]) | length > 0
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
 

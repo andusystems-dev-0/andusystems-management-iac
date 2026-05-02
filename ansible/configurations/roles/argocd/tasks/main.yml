@@ -3,6 +3,12 @@
   tags:
     - install
 
+- name: main | register spoke clusters in ArgoCD
+  import_tasks: register-clusters.yml
+  tags:
+    - install
+    - register-clusters
+
 - name: main | cleanup ArgoCD
   import_tasks: cleanup.yml
   tags:

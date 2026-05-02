@@ -22,17 +22,28 @@
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
 
-- name: Kick off Traefik ArgoCD app sync (async)
-  command: argocd app sync management-traefik --async
+- name: Sync Traefik ArgoCD app (synchronous, retried)
+  # Synchronous sync so we know it completed before we check health.
+  # `argocd app sync` returns non-zero on transient sync failures (CRD
+  # validation flapping while hub.traefik.io CRDs stabilise, Degraded
+  # transitions, etc.) — retries cover that.
+  command: argocd app sync management-traefik --timeout 600
   register: sync_result
-  changed_when: true
-  retries: 3
-  delay: 10
+  changed_when: "'OutOfSync' not in sync_result.stdout or 'Synced' in sync_result.stdout"
+  retries: 5
+  delay: 15
   until: sync_result.rc == 0
 
-- name: Wait for Traefik ArgoCD app to be synced and healthy
-  command: argocd app wait management-traefik --sync --health --timeout 600
-  register: wait_result
+# Health check decoupled from sync: poll until the Traefik Deployment
+# is Available. `argocd app wait --health` fail-fasts on Missing→Degraded
+# transitions, which fires before pods finish rolling out. The
+# Deployment's Available condition is the actual source of truth.
+- name: Wait for Traefik Deployment to be Available
+  command: >
+    kubectl -n traefik wait deployment/management-traefik
+    --for=condition=Available --timeout=600s
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
   changed_when: false
 
 - name: Wait for Traefik CRDs to be registered

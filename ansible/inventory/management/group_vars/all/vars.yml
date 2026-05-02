@@ -91,12 +91,6 @@ newt_secret: "{{ vault_newt_secret }}"
 minio_root_user: "{{ vault_minio_root_user }}"
 minio_root_password: "{{ vault_minio_root_password }}"
 
-# Slimerio cluster
-slimerio_repo_root: "{{ vault_slimerio_repo_root }}"
-slimerio_kubeconfig: "{{ vault_slimerio_kubeconfig }}"
-slimerio_ssh_private_key_path: "{{ vault_slimerio_ssh_private_key_path }}"
-slimerio_traefik_server_ip: "{{ vault_slimerio_traefik_server_ip }}"
-
 # Portfolio cluster
 portfolio_repo_root: "{{ vault_portfolio_repo_root }}"
 portfolio_kubeconfig: "{{ vault_portfolio_kubeconfig }}"
