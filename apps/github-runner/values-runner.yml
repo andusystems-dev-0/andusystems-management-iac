@@ -43,7 +43,7 @@ template:
     # (apps/nexus/manifests/cert.yml in andusystems-storage), so dockerd
     # and buildkit validate the chain cleanly without any insecure flag.
     hostAliases:
-      - ip: "10.238.40.21"
+      - ip: "{{ storage_traefik_server_ip }}"
         hostnames:
           - "registry.andusystems.com"
     initContainers:

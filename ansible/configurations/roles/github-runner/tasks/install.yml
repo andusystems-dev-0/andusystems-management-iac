@@ -32,12 +32,23 @@
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
 
+# Render values-runner.yml as a Jinja2 template so cross-cluster IPs (e.g.
+# storage_traefik_server_ip in hostAliases) come from the management vault
+# rather than being hardcoded in the values file. Helm does NOT process
+# Jinja2 in --values arguments, so we render to a tempfile and feed that.
+- name: Render runner values from template
+  template:
+    src: "{{ repo_root }}/apps/github-runner/values-runner.yml"
+    dest: /tmp/arc-runner-values.yml
+    mode: "0600"
+  changed_when: false
+
 - name: Install runner scale set
   command: >
     helm upgrade --install arc-runner-set
     oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
     --namespace arc-runners
-    --values {{ repo_root }}/apps/github-runner/values-runner.yml
+    --values /tmp/arc-runner-values.yml
     --set githubConfigUrl=https://github.com/{{ github_runner_repo }}
     --wait
     --timeout 300s

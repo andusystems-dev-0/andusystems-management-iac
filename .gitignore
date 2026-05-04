@@ -17,10 +17,12 @@ kubeconfig
 .env.*
 !.env.example
 
+# Ansible
+ansible.log
 ansible/inventory/*/group_vars/all/vault
 
 # Vault unseal keys (SENSITIVE)
 .vault-keys.json
-.[AI_ASSISTANT]/
-[AI_ASSISTANT].md
-.[AI_ASSISTANT]/settings.local.json
+.claude/
+CLAUDE.md
+.claude/settings.local.json
