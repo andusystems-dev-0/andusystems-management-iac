@@ -32,3 +32,7 @@ provider "kubectl" {
   config_path = var.kubeconfig_path
   apply_retry_count = 3
 }
+
+provider "aws" {
+  region = "us-east-1"
+}

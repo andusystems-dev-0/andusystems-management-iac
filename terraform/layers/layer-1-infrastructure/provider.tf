@@ -26,3 +26,7 @@ provider "helm" {
     config_path = var.kubeconfig_path
   }
 }
+
+provider "aws" {
+  region = "us-east-1"
+}
