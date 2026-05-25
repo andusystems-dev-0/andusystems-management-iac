@@ -21,7 +21,7 @@ This repository defines the complete lifecycle of the management Kubernetes clus
 
 | Component | Purpose | Namespace |
 |---|---|---|
-| MetalLB | L2 load balancer — provides external IPs for services | `metallb` |
+| MetalLB | kubernetes load balancer — provides external IPs for services | `metallb` |
 | ArgoCD | GitOps hub — manages all cluster and spoke deployments | `argocd` |
 | Traefik | Ingress controller using IngressRoute CRDs | `traefik` |
 | cert-manager | Automated TLS via Let's Encrypt DNS-01 (Cloudflare) | `cert-manager` |
