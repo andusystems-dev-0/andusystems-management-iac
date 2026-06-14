@@ -1,0 +1,100 @@
+# gha-runner-scale-set Helm values — Hireship app repo runner.
+# Chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+#
+# Deploy with:
+#
+#   helm upgrade --install gha-runner-scale-set-hireship \
+#     oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
+#     --namespace arc-runners \
+#     -f apps/github-runner/values-runner-hireship.yml \
+#     --wait
+#
+# The runner registers against the andusystems-dev-0/Hireship mirror
+# (Sentinel pushes from forgejo:andusystems/Hireship). The PAT lives in the
+# same `github-runner-pat` Secret the Portfolio runner uses — make sure the
+# PAT has Actions+Administration write on BOTH repos (or use a per-runner
+# Secret if you want to split them).
+#
+# Workflows in Hireship reference `runs-on: self-hosted`. If you want to keep
+# Portfolio + Hireship runners on distinct labels, change `runnerScaleSetName`
+# below to `self-hosted-hireship` and update the Hireship workflow accordingly.
+
+githubConfigUrl: "https://github.com/{{ vault_github_runner_hireship_repo }}"
+githubConfigSecret: github-runner-pat
+runnerScaleSetName: "self-hosted"
+
+minRunners: 0
+maxRunners: 3
+
+# Same DinD pattern as the portfolio runner — see values-runner.yml for the
+# rationale; the spec is intentionally identical.
+containerMode: {}
+
+template:
+  spec:
+    hostAliases:
+      - ip: "{{ storage_traefik_server_ip }}"
+        hostnames:
+          - "registry.andusystems.com"
+    initContainers:
+      - name: init-dind-externals
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["cp"]
+        args: ["-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
+        volumeMounts:
+          - name: dind-externals
+            mountPath: /home/runner/tmpDir
+      - name: dind
+        image: docker:dind
+        args:
+          - dockerd
+          - --host=unix:///var/run/docker.sock
+          - --group=123
+        restartPolicy: Always
+        securityContext:
+          privileged: true
+        startupProbe:
+          exec:
+            command:
+              - docker
+              - info
+          initialDelaySeconds: 0
+          failureThreshold: 24
+          periodSeconds: 5
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+          - name: dind-externals
+            mountPath: /home/runner/externals
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: DOCKER_HOST
+            value: unix:///var/run/docker.sock
+          - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
+            value: "120"
+        # Rust builds + chromium pulls are heavier than the SvelteKit-only
+        # portfolio image; bump CPU/memory a notch.
+        resources:
+          requests:
+            cpu: "1"
+            memory: 2Gi
+          limits:
+            cpu: "4"
+            memory: 8Gi
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+    volumes:
+      - name: work
+        emptyDir: {}
+      - name: dind-sock
+        emptyDir: {}
+      - name: dind-externals
+        emptyDir: {}

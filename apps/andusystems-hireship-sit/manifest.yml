@@ -1,0 +1,271 @@
+---
+# ============================================================================
+# ArgoCD Applications targeting the andusystems-hireship-sit spoke cluster.
+#
+# Sourced from andusystems-hireship on the cluster-internal Forgejo URL. The
+# cluster destination name `andusystems-hireship-sit` must be registered with
+# ArgoCD first (see ansible/configurations/roles/argocd/tasks/register-clusters.yml).
+#
+# Mirrors apps/andusystems-portfolio/manifest.yml; if you add a new infra
+# chart there, add it here too (and to the prod manifest).
+# ============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hireship-sit-traefik
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.traefik.io/traefik
+      chart: traefik
+      targetRevision: 32.1.1
+      helm:
+        valueFiles:
+          - $values/apps/traefik/values.yml
+        values: |
+          service:
+            type: LoadBalancer
+            additionalServices: {}
+            annotations:
+              metallb.io/address-pool: default
+              metallb.io/loadBalancerIPs: "{{ hireship_sit_traefik_server_ip }}"
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-hireship.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-hireship-sit
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hireship-sit-cert-manager
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      targetRevision: v1.14.4
+      helm:
+        valueFiles:
+          - $values/apps/cert-manager/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-hireship.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-hireship-sit
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hireship-sit-newt
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.fossorial.io
+      chart: newt
+      targetRevision: 1.3.0
+      helm:
+        valueFiles:
+          - $values/apps/pangolin-newt/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-hireship.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-hireship-sit
+    namespace: newt
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hireship-sit-longhorn
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      targetRevision: 1.7.3
+      helm:
+        valueFiles:
+          - $values/apps/longhorn/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-hireship.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-hireship-sit
+    namespace: longhorn-system
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /spec/preserveUnknownFields
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hireship-sit-kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 69.3.2
+      helm:
+        valueFiles:
+          - $values/apps/kube-prometheus-stack/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-hireship.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-hireship-sit
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hireship-sit-loki
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 6.25.0
+      helm:
+        valueFiles:
+          - $values/apps/loki/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-hireship.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-hireship-sit
+    namespace: loki
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hireship-sit-tempo
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: 1.14.0
+      helm:
+        valueFiles:
+          - $values/apps/tempo/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-hireship.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-hireship-sit
+    namespace: tempo
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hireship-sit-alloy
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: k8s-monitoring
+      targetRevision: 2.0.6
+      helm:
+        valueFiles:
+          - $values/apps/alloy/values.yml
+    - repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-hireship.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    name: andusystems-hireship-sit
+    namespace: alloy
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+# Hireship app (plain manifests from Forgejo apps/hireship-sit).
+# Excludes the three Jinja2-templated bootstrap secrets — they're applied by
+# ansible/configurations/roles/hireship before this Application syncs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hireship-sit-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-hireship.git
+    targetRevision: HEAD
+    path: apps/hireship-sit
+    directory:
+      recurse: false
+      # Skip Ansible-templated bootstrap secrets — invalid plain YAML.
+      exclude: '{registry-secret.yml,secrets.yml,postgres-secret.yml}'
+  destination:
+    name: andusystems-hireship-sit
+    namespace: hireship
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

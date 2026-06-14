@@ -1,6 +1,7 @@
 newtInstances:
   - name: main
     enabled: true
+    hostNetwork: true
     auth:
       existingSecretName: newt-credentials
       keys:

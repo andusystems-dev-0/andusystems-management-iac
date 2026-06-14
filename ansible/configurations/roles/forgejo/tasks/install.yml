@@ -200,6 +200,8 @@
         description: "Storage cluster IaC (VLAN 40)"
       - name: "andusystems-portfolio"
         description: "Portfolio cluster IaC"
+      - name: "andusystems-hireship"
+        description: "Hireship sit + prod cluster IaC"
 
 - name: Check if Forgejo IaC repo exists
   shell: >
@@ -286,6 +288,7 @@
       - { name: andusystems-networking,  path: /home/admin/andusystems/andusystems-networking  }
       - { name: andusystems-storage,     path: /home/admin/andusystems/andusystems-storage     }
       - { name: andusystems-portfolio,   path: /home/admin/andusystems/andusystems-portfolio   }
+      - { name: andusystems-hireship,    path: /home/admin/andusystems/andusystems-hireship    }
 
 - name: Check if spoke cluster local clones exist
   stat:
@@ -340,9 +343,9 @@
       - name: andusystems-sentinel
         description: "Sentinel autonomous SDLC engine"
         path: /home/admin/andusystems/andusystems-sentinel
-      - name: andusystems-dispatch
-        description: ""
-        path: /home/admin/andusystems/andusystems-dispatch
+      - name: Hireship
+        description: "Hireship application (Rust API + SvelteKit)"
+        path: /home/admin/andusystems/Hireship
       - name: Portfolio
         description: "Portfolio application"
         path: /home/admin/andusystems/Portfolio

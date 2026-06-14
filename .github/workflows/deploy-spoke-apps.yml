@@ -1,0 +1,117 @@
+name: deploy-spoke-apps
+
+# Apply (or re-apply) one — or all — of the spoke-cluster ArgoCD Application
+# manifests on the management cluster. Each spoke has a wrapper playbook at
+# ansible/configurations/roles/andusystems-<cluster>.yml that templates the
+# matching apps/andusystems-<cluster>/manifest.yml into the management
+# argocd namespace. ArgoCD then syncs the Applications to their target
+# clusters (which must already be registered as destinations — see the
+# register-clusters tag on the argocd role).
+#
+# Manual trigger only. No push trigger, since re-applying is a control-plane
+# write into the management cluster's argocd ns and shouldn't fire on every
+# commit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster:
+        description: 'Which spoke-cluster apps to deploy'
+        type: choice
+        options:
+          - all
+          - andusystems-portfolio
+          - andusystems-monitoring
+          - andusystems-networking
+          - andusystems-storage
+          - andusystems-slimerio
+          - andusystems-fleetdock
+          - andusystems-hireship-sit
+          - andusystems-hireship-prod
+        required: true
+
+concurrency:
+  # Per-cluster serialization. `all` fans out to multiple jobs via matrix;
+  # each job sets its own group below so they don't collide with single-
+  # cluster dispatches of the same name.
+  group: deploy-spoke-apps-${{ github.workflow }}-${{ inputs.cluster }}
+  cancel-in-progress: false
+
+jobs:
+  # Expand `all` into the full list, otherwise emit a single-element matrix.
+  # Doing this in a setup job keeps the matrix definition declarative.
+  plan:
+    runs-on: self-hosted
+    outputs:
+      clusters: ${{ steps.plan.outputs.clusters }}
+    steps:
+      - id: plan
+        env:
+          CHOICE: ${{ inputs.cluster }}
+        run: |
+          if [[ "$CHOICE" == "all" ]]; then
+            echo 'clusters=["andusystems-portfolio","andusystems-monitoring","andusystems-networking","andusystems-storage","andusystems-slimerio","andusystems-fleetdock","andusystems-hireship-sit","andusystems-hireship-prod"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "clusters=[\"${CHOICE}\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: plan
+    # Self-hosted runner in the management cluster's arc-runners namespace.
+    # Same pool as Hireship/build-and-push and andusystems-hireship/bootstrap.
+    runs-on: self-hosted
+    strategy:
+      # Apply each spoke independently. One failing spoke doesn't block the
+      # rest — operators usually want partial success visibility rather than
+      # an all-or-nothing fan-out.
+      fail-fast: false
+      matrix:
+        cluster: ${{ fromJSON(needs.plan.outputs.clusters) }}
+    concurrency:
+      group: deploy-spoke-apps-${{ github.workflow }}-${{ matrix.cluster }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ansible collections
+        run: ansible-galaxy install -r ansible/requirements.yml
+
+      - name: Write vault password file
+        env:
+          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          umask 077
+          printf '%s' "${ANSIBLE_VAULT_PASSWORD}" > "${RUNNER_TEMP}/vault-pass"
+          echo "ANSIBLE_VAULT_PASSWORD_FILE=${RUNNER_TEMP}/vault-pass" >> "$GITHUB_ENV"
+
+      - name: Write management kubeconfig
+        # The role's k8s task reads `KUBECONFIG: {{ kubeconfig }}` — point that
+        # at the file we drop here instead of the workstation path baked into
+        # vault.yml (vault_kubeconfig = /home/admin/...).
+        env:
+          MGMT_KUBECONFIG: ${{ secrets.MGMT_KUBECONFIG }}
+        run: |
+          umask 077
+          KCFG="${RUNNER_TEMP}/management-kubeconfig"
+          printf '%s' "${MGMT_KUBECONFIG}" > "${KCFG}"
+          echo "KUBECONFIG_PATH=${KCFG}" >> "$GITHUB_ENV"
+
+      - name: Run spoke-apps playbook
+        env:
+          CLUSTER: ${{ matrix.cluster }}
+        run: |
+          ansible-playbook \
+            -i ansible/inventory/management \
+            "ansible/configurations/roles/${CLUSTER}.yml" \
+            --tags install \
+            -e "repo_root=${GITHUB_WORKSPACE}" \
+            -e "vault_repo_root=${GITHUB_WORKSPACE}" \
+            -e "apps_dir=${GITHUB_WORKSPACE}/apps" \
+            -e "kubeconfig=${KUBECONFIG_PATH}"
+
+      - name: Scrub secrets
+        if: always()
+        run: |
+          rm -f "${RUNNER_TEMP}/vault-pass" "${RUNNER_TEMP}/management-kubeconfig" || true

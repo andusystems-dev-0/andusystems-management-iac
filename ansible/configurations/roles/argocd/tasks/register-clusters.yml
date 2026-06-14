@@ -335,6 +335,157 @@
     - networking_cluster_add_result is defined
     - not (networking_cluster_add_result.skipped | default(false))
 
+# Register hireship-sit cluster
+# Same pattern as monitoring/networking. The hireship IaC repo is hosted on
+# the cluster-internal Forgejo URL so no explicit `argocd repo add` is needed.
+- name: Check if hireship-sit cluster is already registered
+  shell: argocd cluster get andusystems-hireship-sit
+  register: hireship_sit_cluster_check
+  failed_when: false
+  changed_when: false
+  when: login_result.rc == 0
+
+- name: Stat hireship-sit kubeconfig
+  stat:
+    path: "{{ hireship_sit_kubeconfig }}"
+  register: hireship_sit_kubeconfig_stat
+  when:
+    - login_result.rc == 0
+    - hireship_sit_cluster_check.rc != 0
+
+- name: Fail if hireship-sit kubeconfig is missing
+  fail:
+    msg: |
+      hireship_sit_kubeconfig points at {{ hireship_sit_kubeconfig }} but no
+      file exists at that path. The SIT cluster must be bootstrapped first
+      via andusystems-hireship/scripts/deploy.sh sit (which generates the
+      kubeconfig at the end of its kubernetes role) before the management
+      ArgoCD can register it as a destination.
+  when:
+    - login_result.rc == 0
+    - hireship_sit_cluster_check.rc != 0
+    - not hireship_sit_kubeconfig_stat.stat.exists
+
+- name: Get contexts from hireship-sit kubeconfig
+  shell: |
+    KUBECONFIG={{ hireship_sit_kubeconfig }} kubectl config get-contexts -o name
+  register: hireship_sit_kubecontexts
+  changed_when: false
+  when:
+    - login_result.rc == 0
+    - hireship_sit_cluster_check.rc != 0
+
+- name: Add hireship-sit cluster to ArgoCD
+  shell: |
+    argocd cluster add {{ hireship_sit_kubecontexts.stdout_lines[0] }} \
+      --kubeconfig {{ hireship_sit_kubeconfig }} \
+      --name andusystems-hireship-sit \
+      --system-namespace kube-system \
+      --insecure \
+      --upsert \
+      --yes
+  register: hireship_sit_cluster_add_result
+  changed_when: "'added' in hireship_sit_cluster_add_result.stdout"
+  when:
+    - login_result.rc == 0
+    - hireship_sit_cluster_check.rc != 0
+    - hireship_sit_kubecontexts.stdout_lines | length > 0
+  no_log: true
+
+- name: Label hireship-sit cluster secret for ApplicationSet generator
+  shell: |
+    SECRET_NAME=$(kubectl -n argocd get secrets \
+      -l argocd.argoproj.io/secret-type=cluster \
+      -o jsonpath='{.items[?(@.data.name=="YW5kdXN5c3RlbXMtaGlyZXNoaXAtc2l0")].metadata.name}')
+    if [ -z "$SECRET_NAME" ]; then
+      echo "ERROR: Could not find hireship-sit cluster secret"
+      exit 1
+    fi
+    kubectl -n argocd label secret "$SECRET_NAME" \
+      type=andusystems-hireship-sit \
+      region=us \
+      --overwrite
+  environment:
+    KUBECONFIG: "{{ repo_root }}/kubeconfig"
+  when:
+    - login_result.rc == 0
+    - hireship_sit_cluster_add_result is defined
+    - not (hireship_sit_cluster_add_result.skipped | default(false))
+
+# Register hireship-prod cluster
+- name: Check if hireship-prod cluster is already registered
+  shell: argocd cluster get andusystems-hireship-prod
+  register: hireship_prod_cluster_check
+  failed_when: false
+  changed_when: false
+  when: login_result.rc == 0
+
+- name: Stat hireship-prod kubeconfig
+  stat:
+    path: "{{ hireship_prod_kubeconfig }}"
+  register: hireship_prod_kubeconfig_stat
+  when:
+    - login_result.rc == 0
+    - hireship_prod_cluster_check.rc != 0
+
+- name: Fail if hireship-prod kubeconfig is missing
+  fail:
+    msg: |
+      hireship_prod_kubeconfig points at {{ hireship_prod_kubeconfig }} but
+      no file exists at that path. The prod cluster must be bootstrapped
+      first via andusystems-hireship/scripts/deploy.sh prod before the
+      management ArgoCD can register it as a destination.
+  when:
+    - login_result.rc == 0
+    - hireship_prod_cluster_check.rc != 0
+    - not hireship_prod_kubeconfig_stat.stat.exists
+
+- name: Get contexts from hireship-prod kubeconfig
+  shell: |
+    KUBECONFIG={{ hireship_prod_kubeconfig }} kubectl config get-contexts -o name
+  register: hireship_prod_kubecontexts
+  changed_when: false
+  when:
+    - login_result.rc == 0
+    - hireship_prod_cluster_check.rc != 0
+
+- name: Add hireship-prod cluster to ArgoCD
+  shell: |
+    argocd cluster add {{ hireship_prod_kubecontexts.stdout_lines[0] }} \
+      --kubeconfig {{ hireship_prod_kubeconfig }} \
+      --name andusystems-hireship-prod \
+      --system-namespace kube-system \
+      --insecure \
+      --upsert \
+      --yes
+  register: hireship_prod_cluster_add_result
+  changed_when: "'added' in hireship_prod_cluster_add_result.stdout"
+  when:
+    - login_result.rc == 0
+    - hireship_prod_cluster_check.rc != 0
+    - hireship_prod_kubecontexts.stdout_lines | length > 0
+  no_log: true
+
+- name: Label hireship-prod cluster secret for ApplicationSet generator
+  shell: |
+    SECRET_NAME=$(kubectl -n argocd get secrets \
+      -l argocd.argoproj.io/secret-type=cluster \
+      -o jsonpath='{.items[?(@.data.name=="YW5kdXN5c3RlbXMtaGlyZXNoaXAtcHJvZA==")].metadata.name}')
+    if [ -z "$SECRET_NAME" ]; then
+      echo "ERROR: Could not find hireship-prod cluster secret"
+      exit 1
+    fi
+    kubectl -n argocd label secret "$SECRET_NAME" \
+      type=andusystems-hireship-prod \
+      region=us \
+      --overwrite
+  environment:
+    KUBECONFIG: "{{ repo_root }}/kubeconfig"
+  when:
+    - login_result.rc == 0
+    - hireship_prod_cluster_add_result is defined
+    - not (hireship_prod_cluster_add_result.skipped | default(false))
+
 - name: Verify cluster was added
   shell: argocd cluster list
   register: cluster_list

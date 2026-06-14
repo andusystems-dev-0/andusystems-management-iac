@@ -1,0 +1,11 @@
+- name: Install Hireship SIT Apps
+  gather_facts: true
+  hosts: localhost
+  tasks:
+
+    - include_role:
+        name: andusystems-hireship-sit
+      tags:
+        - hireship-sit-apps
+        - apps
+        - install

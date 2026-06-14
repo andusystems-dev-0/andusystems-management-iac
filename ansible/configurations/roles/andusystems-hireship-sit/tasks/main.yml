@@ -1,0 +1,4 @@
+- name: main | install Hireship SIT Apps
+  import_tasks: install.yml
+  tags:
+    - install
