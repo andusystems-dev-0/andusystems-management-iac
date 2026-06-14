@@ -41,7 +41,7 @@ jobs:
   # Expand `all` into the full list, otherwise emit a single-element matrix.
   # Doing this in a setup job keeps the matrix definition declarative.
   plan:
-    runs-on: self-hosted
+    runs-on: self-hosted-management-iac
     outputs:
       clusters: ${{ steps.plan.outputs.clusters }}
     steps:
@@ -59,7 +59,7 @@ jobs:
     needs: plan
     # Self-hosted runner in the management cluster's arc-runners namespace.
     # Same pool as Hireship/build-and-push and andusystems-hireship/bootstrap.
-    runs-on: self-hosted
+    runs-on: self-hosted-management-iac
     strategy:
       # Apply each spoke independently. One failing spoke doesn't block the
       # rest — operators usually want partial success visibility rather than
