@@ -21,7 +21,7 @@
 
 githubConfigUrl: "https://github.com/{{ vault_github_runner_hireship_repo }}"
 githubConfigSecret: github-runner-pat
-runnerScaleSetName: "self-hosted"
+runnerScaleSetName: "self-hosted-hireship"
 
 minRunners: 0
 maxRunners: 3

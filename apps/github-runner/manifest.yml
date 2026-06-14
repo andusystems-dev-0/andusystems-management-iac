@@ -17,3 +17,19 @@ metadata:
 type: Opaque
 stringData:
   github_token: "{{ github_runner_pat }}"
+---
+# imagePullSecret for the custom IaC runner image hosted on the in-house
+# Nexus Docker registry. Only the IaC scale sets reference it
+# (values-runner-hireship-iac.yml, values-runner-management-iac.yml); the
+# Portfolio + Hireship app runners pull the stock image from ghcr.io and
+# don't need this. Credentials are the cluster-puller Nexus role (read-only
+# on andusystems-docker), populated from the management vault.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nexus-pull
+  namespace: arc-runners
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: |
+    {"auths":{"registry.andusystems.com":{"auth":"{{ (nexus_cluster_puller_user + ':' + nexus_cluster_puller_password) | b64encode }}"}}}

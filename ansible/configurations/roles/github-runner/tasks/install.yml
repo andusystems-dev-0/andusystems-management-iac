@@ -32,27 +32,38 @@
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
 
-# Render values-runner.yml as a Jinja2 template so cross-cluster IPs (e.g.
+# Each repo gets its own scale set bound to the repo's GitHub URL. All four
+# share the `self-hosted` runner label (workflows don't need to know which
+# scale set picked them up — GitHub matches jobs to runners by URL scope).
+# Helm release names MUST be distinct; that's the per-scale-set identity.
+#
+# Values files are rendered as Jinja2 templates so cross-cluster IPs (e.g.
 # storage_traefik_server_ip in hostAliases) come from the management vault
-# rather than being hardcoded in the values file. Helm does NOT process
-# Jinja2 in --values arguments, so we render to a tempfile and feed that.
-- name: Render runner values from template
+# rather than being hardcoded. Helm does NOT process Jinja2 in --values
+# arguments, so each is rendered to a tempfile first.
+- name: Render runner values for each repo
   template:
-    src: "{{ repo_root }}/apps/github-runner/values-runner.yml"
-    dest: /tmp/arc-runner-values.yml
+    src: "{{ repo_root }}/apps/github-runner/{{ item.values_file }}"
+    dest: "/tmp/arc-runner-values-{{ item.release }}.yml"
     mode: "0600"
+  loop: "{{ runner_scale_sets }}"
+  loop_control:
+    label: "{{ item.release }}"
   changed_when: false
 
-- name: Install runner scale set
+- name: Install runner scale sets
   command: >
-    helm upgrade --install arc-runner-set
+    helm upgrade --install {{ item.release }}
     oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
     --namespace arc-runners
-    --values /tmp/arc-runner-values.yml
-    --set githubConfigUrl=https://github.com/{{ github_runner_repo }}
+    --values /tmp/arc-runner-values-{{ item.release }}.yml
+    --set githubConfigUrl={{ item.github_url }}
     --wait
     --timeout 300s
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
+  loop: "{{ runner_scale_sets }}"
+  loop_control:
+    label: "{{ item.release }}"
   register: arc_runner_helm
   changed_when: "'has been upgraded' in arc_runner_helm.stdout or 'has been installed' in arc_runner_helm.stdout"

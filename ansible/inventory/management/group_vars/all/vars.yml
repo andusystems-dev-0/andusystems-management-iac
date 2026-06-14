@@ -110,3 +110,15 @@ github_runner_repo: "{{ vault_github_runner_repo }}"
 # Second runner scale set bound to the Hireship app repo (the Hireship
 # mirror under andusystems-dev-0). Consumed by apps/github-runner/values-runner-hireship.yml.
 vault_github_runner_hireship_repo: "{{ vault_github_runner_hireship_repo }}"
+# IaC repo runners. Same PAT secret as the app-repo runners — the PAT must
+# additionally have Actions+Administration write on each of these repos.
+vault_github_runner_hireship_iac_repo: "{{ vault_github_runner_hireship_iac_repo }}"
+vault_github_runner_management_iac_repo: "{{ vault_github_runner_management_iac_repo }}"
+
+# Nexus cluster-puller credentials. Consumed by apps/github-runner/manifest.yml
+# to build the `nexus-pull` imagePullSecret in the arc-runners namespace so
+# the IaC runner scale sets can pull their custom image from the in-house
+# Nexus Docker registry. Same Nexus role the spoke clusters use for their
+# image pulls (read-only on the andusystems-docker repo).
+nexus_cluster_puller_user: "{{ vault_nexus_cluster_puller_user }}"
+nexus_cluster_puller_password: "{{ vault_nexus_cluster_puller_password }}"

@@ -1,0 +1,43 @@
+# gha-runner-scale-set Helm values — andusystems-hireship IaC repo runner.
+# Chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+#
+# Used by the bootstrap workflow in andusystems-hireship (which runs
+# ansible + terraform to provision Proxmox VMs and kubeadm clusters). No
+# DinD — none of the IaC workflows build container images.
+#
+# Uses the custom IaC runner image (Dockerfile alongside this file) which
+# bakes ansible-core + collections, terraform, kubectl, helm, argocd, and
+# openssh-client. Rebuild via apps/github-runner/build-and-push.sh.
+
+githubConfigUrl: "https://github.com/{{ vault_github_runner_hireship_iac_repo }}"
+githubConfigSecret: github-runner-pat
+runnerScaleSetName: "self-hosted-hireship-iac"
+
+minRunners: 0
+maxRunners: 2
+
+template:
+  spec:
+    imagePullSecrets:
+      - name: nexus-pull
+    containers:
+      - name: runner
+        image: registry.andusystems.com/andusystems-docker/github-runner-iac:latest
+        command: ["/home/runner/run.sh"]
+        # Ansible + terraform + chromium-less Rust toolchains aren't memory
+        # heavy on their own, but kubeadm bootstrap pulls a lot of images on
+        # the spoke side over SSH and the runner holds connections open the
+        # whole time — give it room.
+        resources:
+          requests:
+            cpu: "1"
+            memory: 2Gi
+          limits:
+            cpu: "2"
+            memory: 4Gi
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+    volumes:
+      - name: work
+        emptyDir: {}

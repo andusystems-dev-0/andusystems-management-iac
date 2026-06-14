@@ -1,0 +1,23 @@
+---
+# Per-scale-set bindings. Each entry produces one Helm release in arc-runners
+# bound to the matching GitHub repo. To add another consumer repo, append
+# an entry here and create a values-runner-<name>.yml file alongside.
+#
+# release       — Helm release name (must be unique in arc-runners).
+# values_file   — path under apps/github-runner/ (rendered as Jinja2).
+# github_url    — repo URL the runner registers against; the GitHub PAT in
+#                 `github-runner-pat` must have Actions+Administration write
+#                 on this repo.
+runner_scale_sets:
+  - release: arc-runner-set
+    values_file: values-runner.yml
+    github_url: "https://github.com/{{ github_runner_repo }}"
+  - release: arc-runner-set-hireship
+    values_file: values-runner-hireship.yml
+    github_url: "https://github.com/{{ vault_github_runner_hireship_repo }}"
+  - release: arc-runner-set-hireship-iac
+    values_file: values-runner-hireship-iac.yml
+    github_url: "https://github.com/{{ vault_github_runner_hireship_iac_repo }}"
+  - release: arc-runner-set-management-iac
+    values_file: values-runner-management-iac.yml
+    github_url: "https://github.com/{{ vault_github_runner_management_iac_repo }}"

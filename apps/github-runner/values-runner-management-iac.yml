@@ -1,0 +1,42 @@
+# gha-runner-scale-set Helm values — andusystems-management-iac repo runner.
+# Chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+#
+# Used by the deploy-spoke-apps workflow in andusystems-management-iac (which
+# runs ansible against the management cluster's argocd ns to apply spoke
+# ArgoCD Application manifests). No DinD — same rationale as the hireship-iac
+# runner.
+#
+# Uses the same custom IaC runner image as values-runner-hireship-iac.yml
+# (built from apps/github-runner/Dockerfile). Bakes the ansible/kubectl/argocd
+# tools this workflow needs.
+
+githubConfigUrl: "https://github.com/{{ vault_github_runner_management_iac_repo }}"
+githubConfigSecret: github-runner-pat
+runnerScaleSetName: "self-hosted-management-iac"
+
+minRunners: 0
+maxRunners: 2
+
+template:
+  spec:
+    imagePullSecrets:
+      - name: nexus-pull
+    containers:
+      - name: runner
+        image: registry.andusystems.com/andusystems-docker/github-runner-iac:latest
+        command: ["/home/runner/run.sh"]
+        # Lighter than the hireship-iac runner — these workflows only
+        # template manifests and call kubectl/argocd, no terraform/kubeadm.
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: "2"
+            memory: 2Gi
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+    volumes:
+      - name: work
+        emptyDir: {}
