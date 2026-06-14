@@ -115,6 +115,13 @@ vault_github_runner_hireship_repo: "{{ vault_github_runner_hireship_repo }}"
 vault_github_runner_hireship_iac_repo: "{{ vault_github_runner_hireship_iac_repo }}"
 vault_github_runner_management_iac_repo: "{{ vault_github_runner_management_iac_repo }}"
 
+# Internal DNS — Pi-hole on the networking cluster. Resolves internal
+# andusystems.com hostnames (registry, argocd, forgejo, …) directly to
+# their cluster Traefik IPs instead of going through Pangolin. Falls back
+# to public resolvers for everything else.
+cluster_dns: "{{ vault_cluster_dns | default('10.238.30.50') }}"
+cluster_dns_fallback: "{{ vault_cluster_dns_fallback | default('1.1.1.1 8.8.8.8') }}"
+
 # Nexus cluster-puller credentials. Consumed by apps/github-runner/manifest.yml
 # to build the `nexus-pull` imagePullSecret in the arc-runners namespace so
 # the IaC runner scale sets can pull their custom image from the in-house
