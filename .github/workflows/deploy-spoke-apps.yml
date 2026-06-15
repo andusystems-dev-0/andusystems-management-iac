@@ -8,6 +8,12 @@ name: deploy-spoke-apps
 # clusters (which must already be registered as destinations — see the
 # register-clusters tag on the argocd role).
 #
+# Secrets come from HashiCorp Vault via GitHub OIDC — see
+# scripts/vault-bootstrap.sh for the setup. The local plaintext vault file
+# is gitignored and never present on the runner; every `vault_*` var the
+# spoke roles need is fetched fresh from Vault per job and passed as `-e`
+# overrides to ansible-playbook.
+#
 # Manual trigger only. No push trigger, since re-applying is a control-plane
 # write into the management cluster's argocd ns and shouldn't fire on every
 # commit.
@@ -37,6 +43,13 @@ concurrency:
   group: deploy-spoke-apps-${{ github.workflow }}-${{ inputs.cluster }}
   cancel-in-progress: false
 
+# Required for hashicorp/vault-action JWT auth — GitHub mints a short-lived
+# OIDC token per job that Vault verifies against the role we created in
+# scripts/vault-bootstrap.sh.
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   # Expand `all` into the full list, otherwise emit a single-element matrix.
   # Doing this in a setup job keeps the matrix definition declarative.
@@ -57,8 +70,6 @@ jobs:
 
   deploy:
     needs: plan
-    # Self-hosted runner in the management cluster's arc-runners namespace.
-    # Same pool as Hireship/build-and-push and andusystems-hireship/bootstrap.
     runs-on: self-hosted-management-iac
     strategy:
       # Apply each spoke independently. One failing spoke doesn't block the
@@ -78,28 +89,35 @@ jobs:
       - name: Install ansible collections
         run: ansible-galaxy install -r ansible/requirements.yml
 
-      - name: Write vault password file
-        # Only export ANSIBLE_VAULT_PASSWORD_FILE if the secret is non-empty.
-        # The mgmt repo's vault file is plaintext today (no encrypted files
-        # anywhere in the repo), but ansible still tries to load the password
-        # file at startup if the env var points at it — an empty file fails
-        # with "Invalid vault password was provided from file". Skipping the
-        # export keeps ansible from looking at the file at all.
-        env:
-          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
-        run: |
-          if [[ -n "${ANSIBLE_VAULT_PASSWORD}" ]]; then
-            umask 077
-            printf '%s' "${ANSIBLE_VAULT_PASSWORD}" > "${RUNNER_TEMP}/vault-pass"
-            echo "ANSIBLE_VAULT_PASSWORD_FILE=${RUNNER_TEMP}/vault-pass" >> "$GITHUB_ENV"
-          else
-            echo "ANSIBLE_VAULT_PASSWORD secret is empty — skipping (no encrypted vault files in repo)"
-          fi
+      - name: Fetch secrets from Vault (OIDC)
+        # Pulls only the vars this workflow needs. To add another, append
+        # both to the `secrets:` block below and to the `-e` overrides in
+        # the next step. Per-spoke traefik IPs are included because the
+        # apps/andusystems-*/manifest.yml templates reference them.
+        uses: hashicorp/vault-action@v3
+        with:
+          url: https://vault.andusystems.com
+          method: jwt
+          role: management
+          # The vault-action exports each fetched value as an env var named
+          # by the third field (or upper-cased key by default).
+          secrets: |
+            secret/data/iac/management vault_argocd_server_ip ;
+            secret/data/iac/management vault_argocd_admin_password ;
+            secret/data/iac/management vault_management_traefik_server_ip ;
+            secret/data/iac/management vault_monitoring_traefik_server_ip ;
+            secret/data/iac/management vault_networking_traefik_server_ip ;
+            secret/data/iac/management vault_storage_traefik_server_ip ;
+            secret/data/iac/management vault_portfolio_traefik_server_ip ;
+            secret/data/iac/management vault_fleetdock_traefik_server_ip ;
+            secret/data/iac/management vault_hireship_sit_traefik_server_ip ;
+            secret/data/iac/management vault_hireship_prod_traefik_server_ip ;
+            secret/data/iac/management vault_homepage_url
 
       - name: Write management kubeconfig
         # The role's k8s task reads `KUBECONFIG: {{ kubeconfig }}` — point that
         # at the file we drop here instead of the workstation path baked into
-        # vault.yml (vault_kubeconfig = /home/admin/...).
+        # the vault file (vault_kubeconfig = /home/admin/...).
         env:
           MGMT_KUBECONFIG: ${{ secrets.MGMT_KUBECONFIG }}
         run: |
@@ -119,9 +137,20 @@ jobs:
             -e "repo_root=${GITHUB_WORKSPACE}" \
             -e "vault_repo_root=${GITHUB_WORKSPACE}" \
             -e "apps_dir=${GITHUB_WORKSPACE}/apps" \
-            -e "kubeconfig=${KUBECONFIG_PATH}"
+            -e "kubeconfig=${KUBECONFIG_PATH}" \
+            -e "vault_argocd_server_ip=${VAULT_ARGOCD_SERVER_IP}" \
+            -e "vault_argocd_admin_password=${VAULT_ARGOCD_ADMIN_PASSWORD}" \
+            -e "vault_management_traefik_server_ip=${VAULT_MANAGEMENT_TRAEFIK_SERVER_IP}" \
+            -e "vault_monitoring_traefik_server_ip=${VAULT_MONITORING_TRAEFIK_SERVER_IP}" \
+            -e "vault_networking_traefik_server_ip=${VAULT_NETWORKING_TRAEFIK_SERVER_IP}" \
+            -e "vault_storage_traefik_server_ip=${VAULT_STORAGE_TRAEFIK_SERVER_IP}" \
+            -e "vault_portfolio_traefik_server_ip=${VAULT_PORTFOLIO_TRAEFIK_SERVER_IP}" \
+            -e "vault_fleetdock_traefik_server_ip=${VAULT_FLEETDOCK_TRAEFIK_SERVER_IP}" \
+            -e "vault_hireship_sit_traefik_server_ip=${VAULT_HIRESHIP_SIT_TRAEFIK_SERVER_IP}" \
+            -e "vault_hireship_prod_traefik_server_ip=${VAULT_HIRESHIP_PROD_TRAEFIK_SERVER_IP}" \
+            -e "vault_homepage_url=${VAULT_HOMEPAGE_URL}"
 
       - name: Scrub secrets
         if: always()
         run: |
-          rm -f "${RUNNER_TEMP}/vault-pass" "${RUNNER_TEMP}/management-kubeconfig" || true
+          rm -f "${RUNNER_TEMP}/management-kubeconfig" || true
