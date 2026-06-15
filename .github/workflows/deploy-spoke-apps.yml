@@ -30,7 +30,6 @@ on:
           - andusystems-monitoring
           - andusystems-networking
           - andusystems-storage
-          - andusystems-slimerio
           - andusystems-fleetdock
           - andusystems-hireship-sit
           - andusystems-hireship-prod
@@ -63,7 +62,7 @@ jobs:
           CHOICE: ${{ inputs.cluster }}
         run: |
           if [[ "$CHOICE" == "all" ]]; then
-            echo 'clusters=["andusystems-portfolio","andusystems-monitoring","andusystems-networking","andusystems-storage","andusystems-slimerio","andusystems-fleetdock","andusystems-hireship-sit","andusystems-hireship-prod"]' >> "$GITHUB_OUTPUT"
+            echo 'clusters=["andusystems-portfolio","andusystems-monitoring","andusystems-networking","andusystems-storage","andusystems-fleetdock","andusystems-hireship-sit","andusystems-hireship-prod"]' >> "$GITHUB_OUTPUT"
           else
             echo "clusters=[\"${CHOICE}\"]" >> "$GITHUB_OUTPUT"
           fi

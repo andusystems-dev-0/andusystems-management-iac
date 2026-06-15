@@ -13,6 +13,5 @@
 - import_playbook: ./roles/andusystems-networking.yml
 - import_playbook: ./roles/andusystems-storage.yml
 - import_playbook: ./roles/andusystems-monitoring.yml
-#- import_playbook: ./roles/andusystems-slimerio.yml
 - import_playbook: ./roles/andusystems-portfolio.yml
 - import_playbook: ./roles/github-runner.yml
