@@ -90,29 +90,45 @@ jobs:
         run: ansible-galaxy install -r ansible/requirements.yml
 
       - name: Fetch secrets from Vault (OIDC)
-        # Pulls only the vars this workflow needs. To add another, append
-        # both to the `secrets:` block below and to the `-e` overrides in
-        # the next step. Per-spoke traefik IPs are included because the
-        # apps/andusystems-*/manifest.yml templates reference them.
+        # Wildcard pulls every field from secret/iac/management at once.
+        # Each field becomes an env var prefixed by VAULT_ (uppercased).
+        # The next step converts these into an ansible extra-vars YAML file
+        # so adding a new secret doesn't need a workflow change.
         uses: hashicorp/vault-action@v3
         with:
           url: https://vault.andusystems.com
           method: jwt
           role: management
-          # The vault-action exports each fetched value as an env var named
-          # by the third field (or upper-cased key by default).
+          # Explicit so it always matches the role's bound_audiences regardless
+          # of vault-action default changes between versions.
+          jwtGithubAudience: https://github.com/andusystems-dev-0
+          exportToken: false
           secrets: |
-            secret/data/iac/management vault_argocd_server_ip ;
-            secret/data/iac/management vault_argocd_admin_password ;
-            secret/data/iac/management vault_management_traefik_server_ip ;
-            secret/data/iac/management vault_monitoring_traefik_server_ip ;
-            secret/data/iac/management vault_networking_traefik_server_ip ;
-            secret/data/iac/management vault_storage_traefik_server_ip ;
-            secret/data/iac/management vault_portfolio_traefik_server_ip ;
-            secret/data/iac/management vault_fleetdock_traefik_server_ip ;
-            secret/data/iac/management vault_hireship_sit_traefik_server_ip ;
-            secret/data/iac/management vault_hireship_prod_traefik_server_ip ;
-            secret/data/iac/management vault_homepage_url
+            secret/data/iac/management *
+
+      - name: Build ansible extra-vars file from Vault env vars
+        # vault-action exports each secret field as VAULT_<UPPER_FIELD>. Source
+        # field names already start with `vault_` (e.g. vault_argocd_admin_password
+        # → VAULT_VAULT_ARGOCD_ADMIN_PASSWORD). Strip the leading VAULT_ that
+        # the action prepends, lowercase, write to a YAML extra-vars file.
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/vault-vars.yml"
+          umask 077
+          : > "$OUT"
+          while IFS='=' read -r name value; do
+            case "$name" in
+              VAULT_VAULT_*) ;;
+              *) continue ;;
+            esac
+            key="${name#VAULT_}"
+            key=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
+            esc=${value//\\/\\\\}
+            esc=${esc//\"/\\\"}
+            printf '%s: "%s"\n' "$key" "$esc" >> "$OUT"
+          done < <(env)
+          echo "wrote $(wc -l <"$OUT") keys to $OUT"
+          echo "VAULT_VARS_FILE=$OUT" >> "$GITHUB_ENV"
 
       - name: Write management kubeconfig
         # The role's k8s task reads `KUBECONFIG: {{ kubeconfig }}` — point that
@@ -134,23 +150,13 @@ jobs:
             -i ansible/inventory/management \
             "ansible/configurations/roles/${CLUSTER}.yml" \
             --tags install \
+            -e "@${VAULT_VARS_FILE}" \
             -e "repo_root=${GITHUB_WORKSPACE}" \
             -e "vault_repo_root=${GITHUB_WORKSPACE}" \
             -e "apps_dir=${GITHUB_WORKSPACE}/apps" \
-            -e "kubeconfig=${KUBECONFIG_PATH}" \
-            -e "vault_argocd_server_ip=${VAULT_ARGOCD_SERVER_IP}" \
-            -e "vault_argocd_admin_password=${VAULT_ARGOCD_ADMIN_PASSWORD}" \
-            -e "vault_management_traefik_server_ip=${VAULT_MANAGEMENT_TRAEFIK_SERVER_IP}" \
-            -e "vault_monitoring_traefik_server_ip=${VAULT_MONITORING_TRAEFIK_SERVER_IP}" \
-            -e "vault_networking_traefik_server_ip=${VAULT_NETWORKING_TRAEFIK_SERVER_IP}" \
-            -e "vault_storage_traefik_server_ip=${VAULT_STORAGE_TRAEFIK_SERVER_IP}" \
-            -e "vault_portfolio_traefik_server_ip=${VAULT_PORTFOLIO_TRAEFIK_SERVER_IP}" \
-            -e "vault_fleetdock_traefik_server_ip=${VAULT_FLEETDOCK_TRAEFIK_SERVER_IP}" \
-            -e "vault_hireship_sit_traefik_server_ip=${VAULT_HIRESHIP_SIT_TRAEFIK_SERVER_IP}" \
-            -e "vault_hireship_prod_traefik_server_ip=${VAULT_HIRESHIP_PROD_TRAEFIK_SERVER_IP}" \
-            -e "vault_homepage_url=${VAULT_HOMEPAGE_URL}"
+            -e "kubeconfig=${KUBECONFIG_PATH}"
 
       - name: Scrub secrets
         if: always()
         run: |
-          rm -f "${RUNNER_TEMP}/management-kubeconfig" || true
+          rm -f "${RUNNER_TEMP}/management-kubeconfig" "${VAULT_VARS_FILE:-/dev/null}" || true
