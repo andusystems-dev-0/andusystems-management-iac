@@ -179,15 +179,13 @@ for entry in "${REPOS[@]}"; do
 
   log "── $repo_name → secret/iac/$kv_segment ──"
 
-  if [[ ! -f $vault_file ]]; then
-    log "  skip: local vault file missing at $vault_file"
-    continue
-  fi
-
   policy_name="iac-${kv_segment}"
   role_name="${kv_segment}"
 
   # 5a. Policy: read-only access to this repo's KV path
+  # Always created so the auth path works even before the local vault file
+  # is populated; workflows will simply fail later on missing keys, which
+  # is a clearer error than "role X could not be found".
   vault policy write "$policy_name" - <<EOF >/dev/null
 path "secret/data/iac/${kv_segment}" {
   capabilities = ["read"]
@@ -212,7 +210,15 @@ EOF
 EOF
   log "  role  : $role_name  (bound to repo:$GITHUB_ORG/$repo_name:*)"
 
-  # 5c. Populate KV
+  # 5c. Populate KV from the local vault file. Skipped if the file is
+  # missing — the Vault role still exists so workflows authenticate, but
+  # the KV path will be empty until the file is created and this script
+  # is re-run.
+  if [[ ! -f $vault_file ]]; then
+    log "  kv    : skip (local vault file missing at $vault_file)"
+    continue
+  fi
+
   kv_args=()
   while IFS= read -r line; do
     [[ -z $line ]] && continue
@@ -220,7 +226,7 @@ EOF
   done < <(parse_local_vault "$vault_file")
 
   if [[ ${#kv_args[@]} -eq 0 ]]; then
-    log "  no vault_* keys parsed from $vault_file — nothing written"
+    log "  kv    : no vault_* keys parsed from $vault_file — nothing written"
     continue
   fi
 
