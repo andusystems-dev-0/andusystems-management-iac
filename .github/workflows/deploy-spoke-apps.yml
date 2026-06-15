@@ -111,10 +111,10 @@ jobs:
             secret/data/iac/management *
 
       - name: Build ansible extra-vars file from Vault env vars
-        # vault-action exports each secret field as VAULT_<UPPER_FIELD>. Source
-        # field names already start with `vault_` (e.g. vault_argocd_admin_password
-        # → VAULT_VAULT_ARGOCD_ADMIN_PASSWORD). Strip the leading VAULT_ that
-        # the action prepends, lowercase, write to a YAML extra-vars file.
+        # vault-action's wildcard mode exports each field as its UPPERCASED
+        # key name (the source keys already start with `vault_`, so they
+        # surface as `VAULT_*`). Downcase to recover the original key and
+        # write into a YAML extra-vars file ansible loads via -e @file.
         run: |
           set -euo pipefail
           OUT="${RUNNER_TEMP}/vault-vars.yml"
@@ -122,11 +122,10 @@ jobs:
           : > "$OUT"
           while IFS='=' read -r name value; do
             case "$name" in
-              VAULT_VAULT_*) ;;
+              VAULT_*) ;;
               *) continue ;;
             esac
-            key="${name#VAULT_}"
-            key=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
+            key=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
             esc=${value//\\/\\\\}
             esc=${esc//\"/\\\"}
             printf '%s: "%s"\n' "$key" "$esc" >> "$OUT"
