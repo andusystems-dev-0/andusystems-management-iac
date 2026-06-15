@@ -98,6 +98,10 @@ jobs:
         with:
           url: https://vault.andusystems.com
           method: jwt
+          # Auth method is mounted at /auth/github-actions, not the default
+          # /auth/jwt. scripts/vault-bootstrap.sh creates it there to keep
+          # the mount name descriptive.
+          path: github-actions
           role: management
           # Explicit so it always matches the role's bound_audiences regardless
           # of vault-action default changes between versions.
