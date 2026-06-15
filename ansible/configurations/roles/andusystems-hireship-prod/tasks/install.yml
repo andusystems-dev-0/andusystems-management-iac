@@ -1,10 +1,19 @@
 - name: Login to ArgoCD
-  # Use --password-stdin so the password never lands on the command line
-  # (no_log no longer needed, which means task errors actually surface
-  # instead of being censored).
+  # argv form keeps the password out of the shell parser (and shells history)
+  # but it is still visible in /proc/<pid>/cmdline while the process runs.
+  # Acceptable on this ephemeral runner; bump the argocd CLI in the runner
+  # image to >= 2.14 to use --password-stdin and drop this entirely.
   ansible.builtin.command:
-    cmd: argocd login {{ argocd_server_ip }} --username admin --password-stdin --insecure --plaintext
-    stdin: "{{ argocd_admin_password }}"
+    argv:
+      - argocd
+      - login
+      - "{{ argocd_server_ip }}"
+      - --username
+      - admin
+      - --password
+      - "{{ argocd_admin_password }}"
+      - --insecure
+      - --plaintext
   register: login_result
   changed_when: "'logged in successfully' in login_result.stdout"
   until: login_result.rc == 0
@@ -12,6 +21,7 @@
   delay: 10
   environment:
     ARGOCD_OPTS: "--grpc-web"
+  no_log: true
 
 - name: install | Install Hireship PROD Cluster Apps
   kubernetes.core.k8s:
