@@ -79,12 +79,22 @@ jobs:
         run: ansible-galaxy install -r ansible/requirements.yml
 
       - name: Write vault password file
+        # Only export ANSIBLE_VAULT_PASSWORD_FILE if the secret is non-empty.
+        # The mgmt repo's vault file is plaintext today (no encrypted files
+        # anywhere in the repo), but ansible still tries to load the password
+        # file at startup if the env var points at it — an empty file fails
+        # with "Invalid vault password was provided from file". Skipping the
+        # export keeps ansible from looking at the file at all.
         env:
           ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
         run: |
-          umask 077
-          printf '%s' "${ANSIBLE_VAULT_PASSWORD}" > "${RUNNER_TEMP}/vault-pass"
-          echo "ANSIBLE_VAULT_PASSWORD_FILE=${RUNNER_TEMP}/vault-pass" >> "$GITHUB_ENV"
+          if [[ -n "${ANSIBLE_VAULT_PASSWORD}" ]]; then
+            umask 077
+            printf '%s' "${ANSIBLE_VAULT_PASSWORD}" > "${RUNNER_TEMP}/vault-pass"
+            echo "ANSIBLE_VAULT_PASSWORD_FILE=${RUNNER_TEMP}/vault-pass" >> "$GITHUB_ENV"
+          else
+            echo "ANSIBLE_VAULT_PASSWORD secret is empty — skipping (no encrypted vault files in repo)"
+          fi
 
       - name: Write management kubeconfig
         # The role's k8s task reads `KUBECONFIG: {{ kubeconfig }}` — point that
