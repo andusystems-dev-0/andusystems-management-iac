@@ -1,0 +1,58 @@
+# RBAC for the IaC runner pods so their in-cluster ServiceAccount token
+# can manage ArgoCD Applications on the management cluster.
+#
+# Each ARC scale set runs its pods under a SA named
+# `<runnerScaleSetName>-gha-rs-no-permission` (the chart's intentional name —
+# the SA itself has zero default permissions and we grant exactly what
+# workflows need). The IaC scale sets (management-iac, hireship-iac) need
+# CRUD on argoproj.io/applications in the `argocd` namespace; that's it.
+#
+# The Portfolio + Hireship app runners don't need this — they only build
+# and push images, no kubectl. Keep them on the empty default permissions.
+#
+# Applied by the `github-runner` ansible role after the controller +
+# scale sets are installed.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: iac-runner-argocd-apps
+  namespace: argocd
+rules:
+  # Manage the ArgoCD Applications spoke-cluster workflows create.
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications", "appprojects"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Read-only access to ConfigMaps/Secrets in argocd ns is occasionally
+  # needed by ArgoCD CLI calls (e.g. argocd login resolves server-info).
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: iac-runner-management-iac-argocd-apps
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: self-hosted-management-iac-gha-rs-no-permission
+    namespace: arc-runners
+roleRef:
+  kind: Role
+  name: iac-runner-argocd-apps
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: iac-runner-hireship-iac-argocd-apps
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: self-hosted-hireship-iac-gha-rs-no-permission
+    namespace: arc-runners
+roleRef:
+  kind: Role
+  name: iac-runner-argocd-apps
+  apiGroup: rbac.authorization.k8s.io

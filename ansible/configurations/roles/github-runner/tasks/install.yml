@@ -6,6 +6,16 @@
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
 
+- name: Apply IaC runner RBAC (Role + RoleBindings in argocd ns)
+  # Grants the IaC scale-set ServiceAccounts CRUD on argoproj.io/applications
+  # so deploy-spoke-apps workflows can manage ArgoCD Applications via the
+  # runner's in-cluster SA token (no kubeconfig secret needed).
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', repo_root + '/apps/github-runner/rbac.yml') | from_yaml_all | list }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
 - name: Install ARC controller
   command: >
     helm upgrade --install arc

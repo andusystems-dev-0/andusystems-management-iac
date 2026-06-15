@@ -1,6 +1,12 @@
 # Bootstrap the cluster-status proxy ConfigMap on the portfolio cluster
 # BEFORE applying the ArgoCD Applications. The cluster-status Deployment
 # references this ConfigMap — same pattern as nexus-registry-credentials.
+#
+# These two tasks target the spoke (portfolio) cluster, not mgmt. Skip them
+# when re-applying from CI by setting skip_spoke_bootstrap=true; the deploy
+# workflow does this because (a) the runner only has SA creds for the mgmt
+# argocd ns, and (b) this ConfigMap is a one-time bootstrap that doesn't
+# need to be re-applied every time someone touches the spoke's manifest.
 - name: install | Create cluster-status namespace on portfolio cluster
   kubernetes.core.k8s:
     state: present
@@ -11,6 +17,7 @@
         name: cluster-status
   environment:
     KUBECONFIG: "{{ portfolio_kubeconfig }}"
+  when: not (skip_spoke_bootstrap | default(false) | bool)
 
 - name: install | Apply cluster-status proxy config to portfolio cluster
   kubernetes.core.k8s:
@@ -18,6 +25,7 @@
     definition: "{{ lookup('template', repo_root + '/apps/andusystems-portfolio/cluster-status-proxy-config.yml') | from_yaml_all | list }}"
   environment:
     KUBECONFIG: "{{ portfolio_kubeconfig }}"
+  when: not (skip_spoke_bootstrap | default(false) | bool)
 
 - name: install | Install Portfolio Cluster Apps
   kubernetes.core.k8s:

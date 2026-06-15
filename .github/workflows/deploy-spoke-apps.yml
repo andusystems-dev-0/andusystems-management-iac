@@ -133,19 +133,15 @@ jobs:
           echo "wrote $(wc -l <"$OUT") keys to $OUT"
           echo "VAULT_VARS_FILE=$OUT" >> "$GITHUB_ENV"
 
-      - name: Write management kubeconfig
-        # The role's k8s task reads `KUBECONFIG: {{ kubeconfig }}` — point that
-        # at the file we drop here instead of the workstation path baked into
-        # the vault file (vault_kubeconfig = /home/admin/...).
-        env:
-          MGMT_KUBECONFIG: ${{ secrets.MGMT_KUBECONFIG }}
-        run: |
-          umask 077
-          KCFG="${RUNNER_TEMP}/management-kubeconfig"
-          printf '%s' "${MGMT_KUBECONFIG}" > "${KCFG}"
-          echo "KUBECONFIG_PATH=${KCFG}" >> "$GITHUB_ENV"
-
       - name: Run spoke-apps playbook
+        # kubeconfig="" makes kubernetes.core fall back to the runner pod's
+        # in-cluster ServiceAccount token, which has CRUD on
+        # argoproj.io/applications via apps/github-runner/rbac.yml. Without
+        # the empty override, ansible would template the vault's workstation
+        # path (/home/admin/...) and fail trying to read it.
+        # skip_spoke_bootstrap=true skips cross-cluster setup tasks (e.g.
+        # the portfolio role's cluster-status proxy ConfigMap) that should
+        # only run during initial workstation-driven spoke bootstrap.
         env:
           CLUSTER: ${{ matrix.cluster }}
         run: |
@@ -157,9 +153,10 @@ jobs:
             -e "repo_root=${GITHUB_WORKSPACE}" \
             -e "vault_repo_root=${GITHUB_WORKSPACE}" \
             -e "apps_dir=${GITHUB_WORKSPACE}/apps" \
-            -e "kubeconfig=${KUBECONFIG_PATH}"
+            -e 'kubeconfig=' \
+            -e "skip_spoke_bootstrap=true"
 
       - name: Scrub secrets
         if: always()
         run: |
-          rm -f "${RUNNER_TEMP}/management-kubeconfig" "${VAULT_VARS_FILE:-/dev/null}" || true
+          rm -f "${VAULT_VARS_FILE:-/dev/null}" || true
