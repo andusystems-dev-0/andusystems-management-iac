@@ -136,6 +136,38 @@ spec:
       - RespectIgnoreDifferences=true
 ---
 #
+# Longhorn extras — raw resources that live alongside the Helm release
+# (RecurringJobs, BackupTargets, etc). Convention across spokes:
+# apps/<chart>/values.yml holds Helm values; apps/<chart>/manifest.yml
+# holds raw cluster resources for that chart's namespace. This Application
+# consumes the latter; the include filter excludes values.yml so Argo
+# doesn't try to apply Helm values as a Kubernetes resource.
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portfolio-longhorn-extras
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://forgejo-http.forgejo.svc.cluster.local:3000/andusystems/andusystems-portfolio.git
+    targetRevision: HEAD
+    path: apps/longhorn
+    directory:
+      recurse: false
+      include: 'manifest.yml'
+  destination:
+    name: andusystems-portfolio
+    namespace: longhorn-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+---
+#
 # kube-prometheus-stack
 #
 apiVersion: argoproj.io/v1alpha1
