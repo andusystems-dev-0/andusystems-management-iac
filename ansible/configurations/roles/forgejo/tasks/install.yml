@@ -127,7 +127,7 @@
       - username: "{{ forgejo_alex_username }}"
         email: "{{ forgejo_alex_email }}"
         password: "{{ forgejo_alex_password }}"
-        full_name: "Alex"
+        full_name: "the operator"
 
 - name: Check if Forgejo user exists
   shell: >
